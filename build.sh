@@ -8,8 +8,12 @@ set -euo pipefail
 #
 #   export DOCKERHUB_USERNAME="jmendapara"
 #   export DOCKERHUB_TOKEN="..."
-#   export MODEL="wan-animate"       # or "base" or "all"
-#   curl -fsSL https://raw.githubusercontent.com/Jmendapara/runpod-workers/main/build.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/Jmendapara/runpod-workers/main/build.sh \
+#     | MODEL=wan-animate bash
+#
+# NOTE: `MODEL=...` MUST be on the bash side of the pipe. Putting it before
+# `curl` only exports it to curl, not the piped shell. Alternatively
+# `export MODEL=...` first, then run the curl pipeline.
 #
 # Usage (local checkout):
 #

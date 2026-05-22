@@ -32,9 +32,10 @@ builds.** Only schema validation runs in GitHub Actions on PRs.
 ```bash
 export DOCKERHUB_USERNAME=jmendapara
 export DOCKERHUB_TOKEN=...
-export MODEL=wan-animate                # or "base" or "all"
-curl -fsSL https://raw.githubusercontent.com/Jmendapara/runpod-workers/main/build.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Jmendapara/runpod-workers/main/build.sh | MODEL=wan-animate bash
 ```
+
+**Important:** env vars before `curl` only apply to `curl`, not the piped `bash`. Put `MODEL=...` directly before `bash`, or `export MODEL=...` first. `DOCKERHUB_USERNAME`/`DOCKERHUB_TOKEN` must be `export`ed so they cross the pipe.
 
 `MODEL` values:
 
@@ -51,8 +52,8 @@ Override with `BASE_TAG=YYYY-MM-DD-HHMM-<sha>`.
 ## Updating ComfyUI
 
 ```bash
-COMFYUI_VERSION=0.4.5 MODEL=base curl -fsSL .../build.sh | bash     # rebuild base
-MODEL=all curl -fsSL .../build.sh | bash                            # rebuild all models on new base
+curl -fsSL .../build.sh | COMFYUI_VERSION=0.4.5 MODEL=base bash    # rebuild base
+curl -fsSL .../build.sh | MODEL=all bash                           # rebuild all models on new base
 ```
 
 ## Validating a `model.yaml` locally
