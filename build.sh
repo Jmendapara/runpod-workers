@@ -45,10 +45,10 @@ IMAGE_NAMESPACE="${IMAGE_NAMESPACE:-jmendapara}"
 COMFYUI_VERSION="${COMFYUI_VERSION:-latest}"
 BASE_IMAGE_NAME="${IMAGE_NAMESPACE}/runpod-worker-base"
 
-# Default to plain (non-TTY) BuildKit progress so the long "exporting layers"
-# phase streams per-layer byte counts instead of collapsing to a silent line.
-# Override by setting BUILDKIT_PROGRESS=tty (or auto) in your environment.
-export BUILDKIT_PROGRESS="${BUILDKIT_PROGRESS:-plain}"
+# BuildKit progress UI is left at BuildKit's default (`auto`): fancy TTY bar
+# in interactive shells, plain output in CI. For huge builds (ltx-2.3) where
+# the silent "exporting layers" phase is a problem, run with
+# `BUILDKIT_PROGRESS=plain` in your environment to see per-layer byte counts.
 
 : "${DOCKERHUB_USERNAME:?Set DOCKERHUB_USERNAME}"
 : "${DOCKERHUB_TOKEN:?Set DOCKERHUB_TOKEN}"
