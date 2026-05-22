@@ -43,6 +43,49 @@
       "items": { "type": "string" },
       "default": []
     },
+    "model_downloads": {
+      "type": "array",
+      "description": "Optional weights baked into the image at build time. Files are written under /comfyui/models/<...>.",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["source", "repo_id", "filename", "dest"],
+            "properties": {
+              "source": { "const": "hf" },
+              "repo_id": { "type": "string" },
+              "filename": { "type": "string", "description": "Path within the HuggingFace repo" },
+              "dest":     { "type": "string", "description": "Destination directory under /comfyui/models/..." },
+              "rename":   { "type": "string", "description": "Optional override for the saved filename" }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["source", "repo_id", "dest"],
+            "properties": {
+              "source":  { "const": "hf-snapshot" },
+              "repo_id": { "type": "string" },
+              "dest":    { "type": "string" }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["source", "url", "filename", "dest"],
+            "properties": {
+              "source":   { "const": "url" },
+              "url":      { "type": "string", "pattern": "^https?://" },
+              "filename": { "type": "string" },
+              "dest":     { "type": "string" },
+              "auth_header_env": { "type": "string", "description": "Optional env var name whose value is sent as Authorization: Bearer <value>" }
+            }
+          }
+        ]
+      },
+      "default": []
+    },
     "post_install": {
       "type": "array",
       "items": {

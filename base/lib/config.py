@@ -33,11 +33,23 @@ class OutputConfig:
 
 
 @dataclass(frozen=True)
+class ModelDownload:
+    source: str                  # "hf" | "hf-snapshot" | "url"
+    dest: str
+    repo_id: str | None = None
+    filename: str | None = None
+    rename: str | None = None
+    url: str | None = None
+    auth_header_env: str | None = None
+
+
+@dataclass(frozen=True)
 class ModelConfig:
     name: str
     output: OutputConfig
     custom_nodes: tuple[CustomNode, ...] = ()
     pip_extras: tuple[str, ...] = ()
+    model_downloads: tuple[ModelDownload, ...] = ()
     post_install: tuple[str, ...] = ()
     extra_model_paths_additions: dict[str, str] = field(default_factory=dict)
     env: dict[str, str] = field(default_factory=dict)
@@ -107,11 +119,25 @@ def load_model_config(path: str | None = None) -> ModelConfig:
         for node in raw.get("custom_nodes", [])
     )
 
+    model_downloads = tuple(
+        ModelDownload(
+            source=d["source"],
+            dest=d["dest"],
+            repo_id=d.get("repo_id"),
+            filename=d.get("filename"),
+            rename=d.get("rename"),
+            url=d.get("url"),
+            auth_header_env=d.get("auth_header_env"),
+        )
+        for d in raw.get("model_downloads", [])
+    )
+
     return ModelConfig(
         name=raw["name"],
         output=output,
         custom_nodes=custom_nodes,
         pip_extras=tuple(raw.get("pip_extras", [])),
+        model_downloads=model_downloads,
         post_install=tuple(raw.get("post_install", [])),
         extra_model_paths_additions=dict(raw.get("extra_model_paths_additions", {})),
         env=dict(raw.get("env", {})),

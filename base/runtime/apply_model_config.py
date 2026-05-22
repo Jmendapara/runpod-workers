@@ -104,6 +104,69 @@ def main() -> None:
         print(f"==> Model pip_extras: {extra}", flush=True)
         run([PIP, "install", "-q", "--root-user-action=ignore", *shlex.split(extra)])
 
+    # 3b. Model downloads (bake weights into the image)
+    manifest_downloads: list[str] = []
+    if cfg.model_downloads:
+        hf_token = os.environ.get("HUGGINGFACE_ACCESS_TOKEN") or None
+        for dl in cfg.model_downloads:
+            dest_dir = Path(dl.dest)
+            dest_dir.mkdir(parents=True, exist_ok=True)
+
+            if dl.source == "hf":
+                from huggingface_hub import hf_hub_download
+                print(f"==> HF download: {dl.repo_id}/{dl.filename} -> {dest_dir}", flush=True)
+                tmp = Path("/tmp/hf-stage")
+                tmp.mkdir(parents=True, exist_ok=True)
+                got = hf_hub_download(
+                    repo_id=dl.repo_id,
+                    filename=dl.filename,
+                    local_dir=str(tmp),
+                    token=hf_token,
+                )
+                final_name = dl.rename or os.path.basename(dl.filename)
+                final_path = dest_dir / final_name
+                if str(Path(got).resolve()) != str(final_path.resolve()):
+                    Path(got).replace(final_path)
+                # Clean any subdirs hf_hub_download created under /tmp
+                import shutil as _sh
+                _sh.rmtree(tmp, ignore_errors=True)
+                manifest_downloads.append(f"hf {dl.repo_id}/{dl.filename} -> {final_path}")
+
+            elif dl.source == "hf-snapshot":
+                from huggingface_hub import snapshot_download
+                print(f"==> HF snapshot: {dl.repo_id} -> {dest_dir}", flush=True)
+                snapshot_download(
+                    repo_id=dl.repo_id,
+                    local_dir=str(dest_dir),
+                    token=hf_token,
+                )
+                manifest_downloads.append(f"hf-snapshot {dl.repo_id} -> {dest_dir}")
+
+            elif dl.source == "url":
+                final_path = dest_dir / dl.filename
+                print(f"==> URL download: {dl.url} -> {final_path}", flush=True)
+                wget_cmd = ["wget", "-q", "--show-progress", "-O", str(final_path)]
+                if dl.auth_header_env:
+                    token = os.environ.get(dl.auth_header_env)
+                    if not token:
+                        print(
+                            f"FATAL: model_downloads requires env var {dl.auth_header_env}, which is unset",
+                            file=sys.stderr,
+                        )
+                        sys.exit(2)
+                    wget_cmd += ["--header", f"Authorization: Bearer {token}"]
+                wget_cmd.append(dl.url)
+                run(wget_cmd)
+                manifest_downloads.append(f"url {dl.url} -> {final_path}")
+
+            else:
+                print(f"FATAL: unknown model_downloads source: {dl.source!r}", file=sys.stderr)
+                sys.exit(2)
+
+        # Reclaim cache space
+        import shutil as _sh
+        _sh.rmtree("/root/.cache/huggingface", ignore_errors=True)
+
     # 4. Post-install scripts
     for script in cfg.post_install:
         script_abs = (ctx_dir / script).resolve()
@@ -131,6 +194,10 @@ def main() -> None:
             print(f"      • {name} @ {sha}", flush=True)
     if cfg.pip_extras:
         print(f"    pip_extras: {list(cfg.pip_extras)}", flush=True)
+    if manifest_downloads:
+        print(f"    model_downloads ({len(manifest_downloads)}):", flush=True)
+        for line in manifest_downloads:
+            print(f"      • {line}", flush=True)
     if cfg.post_install:
         print(f"    post_install: {list(cfg.post_install)}", flush=True)
     print("==> apply_model_config.py complete.", flush=True)
