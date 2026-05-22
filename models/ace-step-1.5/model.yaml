@@ -1,0 +1,4 @@
+name: ace-step-1.5
+output:
+  type: image+audio
+  transcode_flac_to_wav: true

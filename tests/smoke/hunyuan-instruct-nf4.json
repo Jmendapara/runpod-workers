@@ -1,0 +1,4 @@
+{
+  "_NOTE": "Placeholder. Paste a known-good workflow JSON for this model here. The smoke runner POSTs this object as the 'input' field; the schema should match what the worker's handler.validate_input() expects (workflow + optional r2_inputs/images + optional uid).",
+  "workflow": {}
+}

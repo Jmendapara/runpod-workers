@@ -1,0 +1,27 @@
+name: validate
+
+on:
+  pull_request:
+    paths:
+      - "models/**"
+      - "schema/**"
+      - "tools/validate_yaml.py"
+  push:
+    branches: [main]
+    paths:
+      - "models/**"
+      - "schema/**"
+      - "tools/validate_yaml.py"
+
+jobs:
+  validate-model-yaml:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install validator deps
+        run: pip install PyYAML jsonschema
+      - name: Validate every model.yaml
+        run: python tools/validate_yaml.py models/*/model.yaml

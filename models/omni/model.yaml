@@ -1,0 +1,20 @@
+name: omni
+custom_nodes:
+  - repo: https://github.com/Saganaki22/ComfyUI-OmniVoice-TTS
+    pip_install_requirements: false
+    extra_pip:
+      - "omnivoice --no-deps"
+      - accelerate
+      - pydub
+      - soundfile
+      - scipy
+      - lazy_loader
+      - librosa
+      - sentencepiece
+      - jieba
+      - soxr
+      - "transformers>=5.3.0"
+post_install:
+  - verify.py
+output:
+  type: image+audio

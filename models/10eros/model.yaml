@@ -1,0 +1,5 @@
+name: 10eros
+custom_nodes:
+  - repo: https://github.com/Lightricks/ComfyUI-LTXVideo
+output:
+  type: image+video

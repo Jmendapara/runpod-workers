@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RunPod ComfyUI Worker model.yaml",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name", "output"],
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]*$",
+      "description": "Must match the directory name under models/"
+    },
+    "custom_nodes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["repo"],
+        "properties": {
+          "repo": {
+            "type": "string",
+            "pattern": "^https?://[^ ]+$"
+          },
+          "ref": {
+            "type": "string",
+            "description": "Optional git branch/tag/SHA. Defaults to repo HEAD with --depth 1."
+          },
+          "pip_install_requirements": {
+            "type": "boolean",
+            "default": true
+          },
+          "extra_pip": {
+            "type": "array",
+            "items": { "type": "string" },
+            "default": []
+          }
+        }
+      },
+      "default": []
+    },
+    "pip_extras": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": []
+    },
+    "post_install": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "description": "Path relative to the model directory; runs as `python <path>`. Non-zero exit fails the build."
+      },
+      "default": []
+    },
+    "extra_model_paths_additions": {
+      "type": "object",
+      "description": "Merged into /comfyui/extra_model_paths.yaml under runpod_worker_comfy:",
+      "additionalProperties": { "type": "string" },
+      "default": {}
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["image", "video", "audio", "image+audio", "image+video", "image+video+gifs"]
+        },
+        "vhs_sidecar_filter": {
+          "type": "boolean",
+          "default": false,
+          "description": "Prefer *-audio.mp4 over silent .mp4; skip PNG thumbnails. Requires video or gifs output."
+        },
+        "transcode_flac_to_wav": {
+          "type": "boolean",
+          "default": false,
+          "description": "Re-encode FLAC outputs to stereo 44.1 kHz WAV. Requires audio output."
+        }
+      }
+    },
+    "env": {
+      "type": "object",
+      "additionalProperties": { "type": "string" },
+      "default": {},
+      "description": "Surfaced as ENV in the final image"
+    }
+  }
+}

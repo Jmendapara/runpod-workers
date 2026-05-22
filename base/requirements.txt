@@ -1,0 +1,7 @@
+runpod~=1.7.12
+requests
+websocket-client
+boto3
+PyYAML
+huggingface_hub[hf_xet]
+jsonschema

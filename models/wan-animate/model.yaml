@@ -1,0 +1,15 @@
+name: wan-animate
+custom_nodes:
+  - repo: https://github.com/kijai/ComfyUI-WanVideoWrapper
+  - repo: https://github.com/kijai/ComfyUI-WanAnimatePreprocess
+  - repo: https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite
+  - repo: https://github.com/kijai/ComfyUI-KJNodes
+  - repo: https://github.com/ltdrdata/ComfyUI-Impact-Pack
+  - repo: https://github.com/cubiq/ComfyUI_essentials
+  - repo: https://github.com/kijai/ComfyUI-segment-anything-2
+  - repo: https://github.com/Fannovel16/ComfyUI-Frame-Interpolation
+    extra_pip:
+      - cupy-cuda12x
+output:
+  type: image+video+gifs
+  vhs_sidecar_filter: true
