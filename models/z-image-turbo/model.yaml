@@ -29,18 +29,19 @@ model_downloads:
     filename: pixel_art_style_z_image_turbo.safetensors
     dest: /comfyui/models/loras/
 
-  # 3) 35mm Photo Flux/Z-Turbo (Civitai). v0.2 is the latest ZImageTurbo variant.
-  #    Civitai downloads require a CIVITAI_TOKEN env var at build time.
+  # 3) 35mm Photo Z-Turbo v0.2 (Civitai). Uses the canonical Civitai filename so
+  #    workflows can reference it without renames. Civitai downloads require a
+  #    CIVITAI_TOKEN env var at build time.
   - source: url
     url: https://civitai.com/api/download/models/2466153
-    filename: 35mm_photo_z_turbo_v0.2.safetensors
+    filename: Z-TURBO_Photography_35mmPhoto_1536.safetensors
     dest: /comfyui/models/loras/
     auth_header_env: CIVITAI_TOKEN
 
-  # 4) Realistic Snapshot v5 (Civitai)
+  # 4) Realistic Snapshot v5 (Civitai). Canonical filename.
   - source: url
     url: https://civitai.com/api/download/models/2617751
-    filename: realistic_snapshot_z_image_turbo_v5.safetensors
+    filename: RealisticSnapshot-Zimage-Turbov5.safetensors
     dest: /comfyui/models/loras/
     auth_header_env: CIVITAI_TOKEN
 
