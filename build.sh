@@ -32,6 +32,7 @@ set -euo pipefail
 #   NO_PUSH=1                   Build only, skip docker push
 #   COMFYUI_VERSION=latest      ComfyUI version (only used for `base` builds)
 #   HUGGINGFACE_ACCESS_TOKEN    Passed through to apply_model_config.py for gated repos
+#   CIVITAI_TOKEN               Passed through for any model_downloads with auth_header_env=CIVITAI_TOKEN
 #
 # Tags pushed (NEVER :latest — every build gets a unique immutable tag):
 #   base:        jmendapara/runpod-worker-base:<UTC-YYYY-MM-DD-HHMM>-<shortsha>
@@ -178,10 +179,19 @@ build_model() {
     local push_flag="--push"
     [ -n "${NO_PUSH:-}" ] && push_flag="--load"
 
+    # Forward optional secrets to apply_model_config.py via build-time env
+    local secret_args=()
+    for var in HUGGINGFACE_ACCESS_TOKEN CIVITAI_TOKEN; do
+        if [ -n "${!var:-}" ]; then
+            secret_args+=(--build-arg "${var}=${!var}")
+        fi
+    done
+
     echo "[4/5] Building model → ${tag}"
     docker buildx build \
         --platform linux/amd64 \
         --build-arg "BASE_VERSION=${base_tag}" \
+        "${secret_args[@]}" \
         ${push_flag} \
         -t "${tag}" \
         "${model_dir}"

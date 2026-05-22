@@ -1,3 +1,48 @@
 name: z-image-turbo
+
+model_downloads:
+  # --- Base Z-Image-Turbo (Comfy-Org/z_image_turbo) ---
+  - source: hf
+    repo_id: Comfy-Org/z_image_turbo
+    filename: split_files/diffusion_models/z_image_turbo_bf16.safetensors
+    dest: /comfyui/models/diffusion_models/
+  - source: hf
+    repo_id: Comfy-Org/z_image_turbo
+    filename: split_files/text_encoders/qwen_3_4b.safetensors
+    dest: /comfyui/models/text_encoders/
+  - source: hf
+    repo_id: Comfy-Org/z_image_turbo
+    filename: split_files/vae/ae.safetensors
+    dest: /comfyui/models/vae/
+
+  # --- LoRAs ---
+  # 1) wcde DeJPEG (HF). Repo ships 5 variants; v3 is the latest. Swap by
+  #    replacing `filename:` with dejpeg_v2 / dejpeg_lite / dejpeg_detailed / dejpeg_strong.
+  - source: hf
+    repo_id: wcde/Z-Image-Turbo-DeJPEG-Lora
+    filename: dejpeg_v3.safetensors
+    dest: /comfyui/models/loras/
+
+  # 2) tarn59 pixel art style (HF)
+  - source: hf
+    repo_id: tarn59/pixel_art_style_lora_z_image_turbo
+    filename: pixel_art_style_z_image_turbo.safetensors
+    dest: /comfyui/models/loras/
+
+  # 3) 35mm Photo Flux/Z-Turbo (Civitai). v0.2 is the latest ZImageTurbo variant.
+  #    Civitai downloads require a CIVITAI_TOKEN env var at build time.
+  - source: url
+    url: https://civitai.com/api/download/models/2466153
+    filename: 35mm_photo_z_turbo_v0.2.safetensors
+    dest: /comfyui/models/loras/
+    auth_header_env: CIVITAI_TOKEN
+
+  # 4) Realistic Snapshot v5 (Civitai)
+  - source: url
+    url: https://civitai.com/api/download/models/2617751
+    filename: realistic_snapshot_z_image_turbo_v5.safetensors
+    dest: /comfyui/models/loras/
+    auth_header_env: CIVITAI_TOKEN
+
 output:
   type: image
