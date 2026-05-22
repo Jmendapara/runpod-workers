@@ -179,16 +179,18 @@ build_model() {
     local push_flag="--push"
     [ -n "${NO_PUSH:-}" ] && push_flag="--load"
 
-    # Forward optional secrets to apply_model_config.py via build-time env
+    # Forward optional build-time secrets via BuildKit --secret (NOT --build-arg,
+    # which would bake the token into image layer history).
     local secret_args=()
-    for var in HUGGINGFACE_ACCESS_TOKEN CIVITAI_TOKEN; do
-        if [ -n "${!var:-}" ]; then
-            secret_args+=(--build-arg "${var}=${!var}")
-        fi
-    done
+    if [ -n "${HUGGINGFACE_ACCESS_TOKEN:-}" ]; then
+        secret_args+=(--secret id=hf_token,env=HUGGINGFACE_ACCESS_TOKEN)
+    fi
+    if [ -n "${CIVITAI_TOKEN:-}" ]; then
+        secret_args+=(--secret id=civitai_token,env=CIVITAI_TOKEN)
+    fi
 
     echo "[4/5] Building model → ${tag}"
-    docker buildx build \
+    DOCKER_BUILDKIT=1 docker buildx build \
         --platform linux/amd64 \
         --build-arg "BASE_VERSION=${base_tag}" \
         "${secret_args[@]}" \
