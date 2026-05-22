@@ -45,6 +45,11 @@ IMAGE_NAMESPACE="${IMAGE_NAMESPACE:-jmendapara}"
 COMFYUI_VERSION="${COMFYUI_VERSION:-latest}"
 BASE_IMAGE_NAME="${IMAGE_NAMESPACE}/runpod-worker-base"
 
+# Default to plain (non-TTY) BuildKit progress so the long "exporting layers"
+# phase streams per-layer byte counts instead of collapsing to a silent line.
+# Override by setting BUILDKIT_PROGRESS=tty (or auto) in your environment.
+export BUILDKIT_PROGRESS="${BUILDKIT_PROGRESS:-plain}"
+
 : "${DOCKERHUB_USERNAME:?Set DOCKERHUB_USERNAME}"
 : "${DOCKERHUB_TOKEN:?Set DOCKERHUB_TOKEN}"
 : "${MODEL:?Set MODEL=base, MODEL=all, or MODEL=<model-name>}"
