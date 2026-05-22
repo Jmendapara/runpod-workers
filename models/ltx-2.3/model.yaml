@@ -2,6 +2,12 @@ name: ltx-2.3
 
 custom_nodes:
   - repo: https://github.com/Lightricks/ComfyUI-LTXVideo
+    # kornia >= 0.8 removed the `pad` symbol from kornia.geometry.transform.pyramid;
+    # ComfyUI-LTXVideo/pyramid_blending.py still imports it, so the whole package
+    # fails to load and all of its nodes (LTXVAddLatentGuide, LTXVCropGuides, etc.)
+    # never get registered. Pin to the last compatible kornia line.
+    extra_pip:
+      - "kornia<0.8"
   - repo: https://github.com/kijai/ComfyUI-KJNodes
   - repo: https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite
   - repo: https://github.com/city96/ComfyUI-GGUF
