@@ -1,5 +1,65 @@
 name: ltx-2.3
+
 custom_nodes:
   - repo: https://github.com/Lightricks/ComfyUI-LTXVideo
+  - repo: https://github.com/kijai/ComfyUI-KJNodes
+  - repo: https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite
+  - repo: https://github.com/city96/ComfyUI-GGUF
+  - repo: https://github.com/kijai/ComfyUI-WanVideoWrapper
+
+pip_extras:
+  - sageattention
+
+model_downloads:
+  # ----- "Create video" workflow's legacy set -----
+  - source: hf
+    repo_id: Lightricks/LTX-2.3
+    filename: ltx-2.3-22b-distilled.safetensors
+    dest: /comfyui/models/checkpoints/
+  - source: hf
+    repo_id: Lightricks/LTX-2.3
+    filename: ltx-2.3-22b-distilled-lora-384.safetensors
+    dest: /comfyui/models/loras/
+  - source: hf
+    repo_id: Lightricks/LTX-2.3
+    filename: ltx-2.3-spatial-upscaler-x2-1.0.safetensors
+    dest: /comfyui/models/latent_upscale_models/
+  - source: hf
+    repo_id: Comfy-Org/ltx-2
+    filename: split_files/text_encoders/gemma_3_12B_it_fp4_mixed.safetensors
+    dest: /comfyui/models/text_encoders/
+
+  # ----- V2V Extend workflow's set -----
+  - source: hf
+    repo_id: Comfy-Org/ltx-2
+    filename: split_files/text_encoders/gemma_3_12B_it_fp8_scaled.safetensors
+    dest: /comfyui/models/text_encoders/
+  - source: hf
+    repo_id: Lightricks/LTX-2.3
+    filename: ltx-2.3-spatial-upscaler-x2-1.1.safetensors
+    dest: /comfyui/models/latent_upscale_models/
+  - source: hf
+    repo_id: Kijai/LTX2.3_comfy
+    filename: diffusion_models/ltx-2.3-22b-distilled_transformer_only_fp8_scaled.safetensors
+    dest: /comfyui/models/unet/LTXVideo/v2/
+  - source: hf
+    repo_id: Kijai/LTX2.3_comfy
+    filename: text_encoders/ltx-2.3_text_projection_bf16.safetensors
+    dest: /comfyui/models/text_encoders/
+  - source: hf
+    repo_id: Kijai/LTX2.3_comfy
+    filename: vae/LTX23_video_vae_bf16.safetensors
+    dest: /comfyui/models/vae/
+    rename: LTX23_video_vae_bf16_KJ.safetensors
+  - source: hf
+    repo_id: Kijai/LTX2.3_comfy
+    filename: vae/LTX23_audio_vae_bf16.safetensors
+    dest: /comfyui/models/vae/
+    rename: LTX23_audio_vae_bf16_KJ.safetensors
+  - source: hf
+    repo_id: Kijai/LTX2.3_comfy
+    filename: vae/taeltx2_3.safetensors
+    dest: /comfyui/models/vae_approx/
+
 output:
   type: image+video
