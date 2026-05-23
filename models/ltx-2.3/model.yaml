@@ -72,4 +72,13 @@ model_downloads:
     dest: /comfyui/models/vae/vae_approx/
 
 output:
-  type: image+video
+  # Includes "gifs" because the Extend Video workflow's VHS_VideoCombine nodes
+  # (578/627) emit MP4 under ComfyUI's legacy "gifs" output key. Without this,
+  # the worker logs "Node 578 produced unhandled keys: ['gifs']" and returns
+  # only {status} with no video. The non-extend workflows use SaveVideo which
+  # emits under "videos" — still covered.
+  type: image+video+gifs
+  # VHS_VideoCombine writes both a silent <prefix>.mp4 and an <prefix>-audio.mp4
+  # sidecar. With this flag set, the harvester keeps only the audio variant when
+  # one exists — otherwise the client would receive two near-duplicate URLs.
+  vhs_sidecar_filter: true
