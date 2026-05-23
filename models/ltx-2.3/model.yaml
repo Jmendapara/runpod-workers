@@ -65,7 +65,11 @@ model_downloads:
   - source: hf
     repo_id: Kijai/LTX2.3_comfy
     filename: vae/taeltx2_3.safetensors
-    dest: /comfyui/models/vae_approx/
+    # Workflow's VAELoader (node 473) references "vae_approx\\taeltx2_3.safetensors"
+    # — i.e. a `vae_approx` subdir of /comfyui/models/vae/. The top-level
+    # /comfyui/models/vae_approx/ dir is not enumerated by VAELoader on recent
+    # ComfyUI builds, so place the file as a subdir of vae/ instead.
+    dest: /comfyui/models/vae/vae_approx/
 
 output:
   type: image+video
