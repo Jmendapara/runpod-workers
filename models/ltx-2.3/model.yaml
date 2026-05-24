@@ -17,7 +17,17 @@ pip_extras:
   - sageattention
 
 model_downloads:
-  # ----- "Create video" workflow's legacy set -----
+  # ----- "Create video" / "Animate Image" workflow's legacy set -----
+  # The T2V / I2V (and Eros routing) builders in server/models/ltx-2-3.js
+  # reference ltx-2.3-22b-dev.safetensors as the base checkpoint and apply
+  # ltx-2.3-22b-distilled-lora-384.safetensors on top at strength 0.5
+  # (the "dev + distilled-lora" pattern). Both checkpoints are baked so the
+  # legacy workflows continue to behave identically to the standalone
+  # ltx-video-runpod-worker image they replace.
+  - source: hf
+    repo_id: Lightricks/LTX-2.3
+    filename: ltx-2.3-22b-dev.safetensors
+    dest: /comfyui/models/checkpoints/
   - source: hf
     repo_id: Lightricks/LTX-2.3
     filename: ltx-2.3-22b-distilled.safetensors
