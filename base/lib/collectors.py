@@ -16,17 +16,30 @@ from .ffmpeg_helpers import flac_to_wav
 
 # Type aliases
 TransformFn = Callable[[bytes, str], tuple[bytes, str]]
-FilterFn = Callable[[str, str, bool], bool]  # (comfy_key, filename, has_audio_variant) -> keep?
+# (comfy_key, filename, has_audio_variant, prefer_silent_mp4) -> keep?
+FilterFn = Callable[[str, str, bool, bool], bool]
 
 
-def _vhs_audio_preferred(comfy_key: str, filename: str, has_audio_variant: bool) -> bool:
+def _vhs_audio_preferred(
+    comfy_key: str,
+    filename: str,
+    has_audio_variant: bool,
+    prefer_silent_mp4: bool,
+) -> bool:
     """Prefer *-audio.mp4 over silent .mp4 / .png thumbnail.
 
     When the driving video has no audio track, VHS_VideoCombine only writes the
     silent .mp4 — accept it as fallback.
+
+    When `prefer_silent_mp4` is set, the input was audio-less and silence was
+    muxed in upstream so the workflow could run. The -audio.mp4 sidecar now
+    contains that silent muxed track; drop it and keep the silent .mp4 so the
+    user-visible output has no audio stream at all.
     """
     if not filename:
         return False
+    if prefer_silent_mp4:
+        return filename.endswith(".mp4") and not filename.endswith("-audio.mp4")
     if filename.endswith("-audio.mp4"):
         return True
     if not has_audio_variant and filename.endswith(".mp4"):
@@ -85,11 +98,17 @@ class CollectorSet:
         job_id: str,
         uploader,
         uid: str | None = None,
+        prefer_silent_mp4: bool = False,
     ) -> dict:
         """Walk ComfyUI history outputs and produce the final response shape.
 
         Returns dict with keys like "images", "videos", "audio", and "errors".
         Honors R2 upload if uploader != None, else returns base64.
+
+        `prefer_silent_mp4=True` signals that at least one input video was
+        audio-less and had silence muxed in. When set with `vhs_sidecar_filter`,
+        the -audio.mp4 sidecar (now containing the silent muxed track) is
+        dropped in favor of the silent .mp4 so the output has no audio stream.
         """
         result: dict[str, list] = {}
         errors: list[str] = []
@@ -141,7 +160,7 @@ class CollectorSet:
                         continue
 
                     if collector.filter and not collector.filter(
-                        collector.comfy_key, filename, has_audio_variant
+                        collector.comfy_key, filename, has_audio_variant, prefer_silent_mp4
                     ):
                         print(f"worker-comfyui - Skipping sidecar {filename}", flush=True)
                         continue
