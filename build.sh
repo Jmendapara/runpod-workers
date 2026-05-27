@@ -105,6 +105,59 @@ echo "       Disk free: $(df -h /var/lib/docker 2>/dev/null | tail -1 | awk '{pr
 
 # ---- Helpers ----
 
+# Build then push, split into two phases to avoid buildkit lease expiry on
+# huge images. When the combined `docker buildx build --push` runs over ~60min
+# on a single operation, buildkit's internal lease times out and the final
+# manifest write fails with "lease does not exist". Writing the image to a tar
+# first, then pushing with the regular docker CLI, sidesteps that because each
+# phase holds its own short-lived state.
+#
+# Args:  <tag>  <context-dir>  [extra docker buildx build flags...]
+# Honors NO_PUSH: when set, just builds and loads locally (no tar, no push).
+_split_build_push() {
+    local tag="$1"
+    local context="$2"
+    shift 2
+    local extra_args=("$@")
+
+    if [ -n "${NO_PUSH:-}" ]; then
+        docker buildx build \
+            "${extra_args[@]}" \
+            --provenance=false --sbom=false \
+            --load \
+            -t "${tag}" \
+            "${context}"
+        return 0
+    fi
+
+    local tmpdir="${BUILD_TMP:-/var/tmp}"
+    mkdir -p "${tmpdir}"
+    local tarfile
+    tarfile="${tmpdir}/$(echo "${tag}" | tr '/:.' '___').tar"
+    rm -f "${tarfile}"
+
+    echo "       [build] → ${tarfile}"
+    echo "       [build] tmp dir disk free: $(df -h "${tmpdir}" 2>/dev/null | tail -1 | awk '{print $4}' || echo unknown)"
+    docker buildx build \
+        "${extra_args[@]}" \
+        --provenance=false --sbom=false \
+        --output "type=docker,dest=${tarfile}" \
+        -t "${tag}" \
+        "${context}"
+
+    echo "       [load] importing tar into local Docker image store..."
+    docker load -i "${tarfile}"
+
+    echo "       [cleanup-tar] removing tar to free disk before push..."
+    rm -f "${tarfile}"
+
+    echo "       [push] ${tag} → Docker Hub..."
+    docker push "${tag}"
+
+    echo "       [cleanup-image] removing local image copy to free disk..."
+    docker image rm "${tag}" >/dev/null 2>&1 || true
+}
+
 # Resolve base tag: explicit env var, or query Docker Hub for the newest
 # YYYY-MM-DD-HHMM-<sha> tag on runpod-worker-base.
 resolve_base_tag() {
@@ -138,17 +191,12 @@ EOF
 # Build & push base image
 build_base() {
     local tag="${BASE_IMAGE_NAME}:${BUILD_TAG}"
-    local push_flag="--push"
-    [ -n "${NO_PUSH:-}" ] && push_flag="--load"
 
     echo "[4/5] Building base image → ${tag}"
-    docker buildx build \
+    _split_build_push "${tag}" "." \
         --platform linux/amd64 \
         -f base/Dockerfile \
-        --build-arg "COMFYUI_VERSION=${COMFYUI_VERSION}" \
-        ${push_flag} \
-        -t "${tag}" \
-        .
+        --build-arg "COMFYUI_VERSION=${COMFYUI_VERSION}"
 
     echo "============================================="
     echo " ✓ Built$([ -z "${NO_PUSH:-}" ] && echo " and pushed") base image:"
@@ -181,8 +229,6 @@ build_model() {
     echo "       Using base: ${BASE_IMAGE_NAME}:${base_tag}"
 
     local tag="${IMAGE_NAMESPACE}/${model}-runpod-worker:${BUILD_TAG}"
-    local push_flag="--push"
-    [ -n "${NO_PUSH:-}" ] && push_flag="--load"
 
     # Forward optional build-time secrets via BuildKit --secret (NOT --build-arg,
     # which would bake the token into image layer history).
@@ -195,13 +241,11 @@ build_model() {
     fi
 
     echo "[4/5] Building model → ${tag}"
-    DOCKER_BUILDKIT=1 docker buildx build \
+    export DOCKER_BUILDKIT=1
+    _split_build_push "${tag}" "${model_dir}" \
         --platform linux/amd64 \
         --build-arg "BASE_VERSION=${base_tag}" \
-        "${secret_args[@]}" \
-        ${push_flag} \
-        -t "${tag}" \
-        "${model_dir}"
+        "${secret_args[@]}"
 
     cat <<EOF
 =============================================
