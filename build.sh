@@ -105,57 +105,38 @@ echo "       Disk free: $(df -h /var/lib/docker 2>/dev/null | tail -1 | awk '{pr
 
 # ---- Helpers ----
 
-# Build then push, split into two phases to avoid buildkit lease expiry on
-# huge images. When the combined `docker buildx build --push` runs over ~60min
-# on a single operation, buildkit's internal lease times out and the final
-# manifest write fails with "lease does not exist". Writing the image to a tar
-# first, then pushing with the regular docker CLI, sidesteps that because each
-# phase holds its own short-lived state.
+# Build & push. Uses buildkit's streaming registry push so the image is never
+# materialized as a local tar — important on disk-constrained hosts where the
+# image itself (~150 GB for ltx-2.3) already eats most of the available space.
+#
+# Trade-off: a long push (>60 min) can hit buildkit's internal lease TTL,
+# causing "lease does not exist" at the manifest-write step. Mitigations:
+#   --provenance=false --sbom=false   skips the attestation layer, removing
+#                                     a push round-trip and shaving lease time
+#
+# If lease expiry recurs and freeing more disk is not an option, the next step
+# is enabling Docker's containerd image store (daemon.json
+# `features.containerd-snapshotter: true`) so build and push share storage,
+# then splitting build/push across two commands. That requires a docker
+# daemon restart and is not automated here.
 #
 # Args:  <tag>  <context-dir>  [extra docker buildx build flags...]
-# Honors NO_PUSH: when set, just builds and loads locally (no tar, no push).
-_split_build_push() {
+# Honors NO_PUSH: when set, just builds and loads locally (no push).
+_build_and_push() {
     local tag="$1"
     local context="$2"
     shift 2
     local extra_args=("$@")
 
-    if [ -n "${NO_PUSH:-}" ]; then
-        docker buildx build \
-            "${extra_args[@]}" \
-            --provenance=false --sbom=false \
-            --load \
-            -t "${tag}" \
-            "${context}"
-        return 0
-    fi
+    local push_flag="--push"
+    [ -n "${NO_PUSH:-}" ] && push_flag="--load"
 
-    local tmpdir="${BUILD_TMP:-/var/tmp}"
-    mkdir -p "${tmpdir}"
-    local tarfile
-    tarfile="${tmpdir}/$(echo "${tag}" | tr '/:.' '___').tar"
-    rm -f "${tarfile}"
-
-    echo "       [build] → ${tarfile}"
-    echo "       [build] tmp dir disk free: $(df -h "${tmpdir}" 2>/dev/null | tail -1 | awk '{print $4}' || echo unknown)"
     docker buildx build \
         "${extra_args[@]}" \
         --provenance=false --sbom=false \
-        --output "type=docker,dest=${tarfile}" \
+        ${push_flag} \
         -t "${tag}" \
         "${context}"
-
-    echo "       [load] importing tar into local Docker image store..."
-    docker load -i "${tarfile}"
-
-    echo "       [cleanup-tar] removing tar to free disk before push..."
-    rm -f "${tarfile}"
-
-    echo "       [push] ${tag} → Docker Hub..."
-    docker push "${tag}"
-
-    echo "       [cleanup-image] removing local image copy to free disk..."
-    docker image rm "${tag}" >/dev/null 2>&1 || true
 }
 
 # Resolve base tag: explicit env var, or query Docker Hub for the newest
@@ -193,7 +174,7 @@ build_base() {
     local tag="${BASE_IMAGE_NAME}:${BUILD_TAG}"
 
     echo "[4/5] Building base image → ${tag}"
-    _split_build_push "${tag}" "." \
+    _build_and_push "${tag}" "." \
         --platform linux/amd64 \
         -f base/Dockerfile \
         --build-arg "COMFYUI_VERSION=${COMFYUI_VERSION}"
@@ -242,7 +223,7 @@ build_model() {
 
     echo "[4/5] Building model → ${tag}"
     export DOCKER_BUILDKIT=1
-    _split_build_push "${tag}" "${model_dir}" \
+    _build_and_push "${tag}" "${model_dir}" \
         --platform linux/amd64 \
         --build-arg "BASE_VERSION=${base_tag}" \
         "${secret_args[@]}"
