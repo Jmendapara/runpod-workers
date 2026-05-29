@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from typing import Callable, Optional
 
 from .config import OutputConfig
-from .ffmpeg_helpers import flac_to_wav
+from .ffmpeg_helpers import flac_to_wav, extract_poster, make_preview_clip
 
 
 # Type aliases
@@ -158,6 +158,10 @@ class CollectorSet:
 
                     item = _to_response_item(file_bytes, filename, job_id, uid, uploader, errors)
                     if item is not None:
+                        # Videos uploaded to R2 also get a poster frame + preview clip so the
+                        # app's grids don't load the full video. Best-effort; never fatal.
+                        if collector.result_key == "videos" and uploader is not None:
+                            _attach_video_derivatives(item, file_bytes, filename, job_id, uid, uploader)
                         result.setdefault(collector.result_key, []).append(item)
 
             other_keys = [k for k in node_output.keys() if k not in handled_keys]
@@ -170,6 +174,31 @@ class CollectorSet:
         if errors:
             result["errors"] = errors
         return result
+
+
+def _attach_video_derivatives(item, file_bytes, filename, job_id, uid, uploader) -> None:
+    """Generate a poster frame + low-res preview clip and attach their R2 keys to `item`.
+
+    `posterKey` / `previewKey` are stored by the app and signed on read. Best-effort:
+    any failure just leaves the key off and the app falls back to the full video.
+    """
+    ext = os.path.splitext(filename)[1] or ".mp4"
+    try:
+        poster = extract_poster(file_bytes, ext)
+        if poster:
+            key, _url = uploader.upload_returning_key(poster, "poster.webp", job_id, uid=uid)
+            item["posterKey"] = key
+            print(f"worker-comfyui - Uploaded poster for {filename}", flush=True)
+    except Exception as exc:
+        print(f"worker-comfyui - poster generation error for {filename}: {exc}", flush=True)
+    try:
+        preview = make_preview_clip(file_bytes, ext)
+        if preview:
+            key, _url = uploader.upload_returning_key(preview, "preview.mp4", job_id, uid=uid)
+            item["previewKey"] = key
+            print(f"worker-comfyui - Uploaded preview clip for {filename}", flush=True)
+    except Exception as exc:
+        print(f"worker-comfyui - preview generation error for {filename}: {exc}", flush=True)
 
 
 def _to_response_item(

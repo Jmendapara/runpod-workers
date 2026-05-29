@@ -69,6 +69,84 @@ def ensure_audio_track(path: str) -> bool:
         return False
 
 
+def extract_poster(video_bytes: bytes, src_ext: str = ".mp4") -> bytes | None:
+    """Extract a poster frame from a video as WebP (longest edge <= 512px).
+
+    Returns the WebP bytes, or None on any failure (caller falls back to no poster).
+    """
+    in_path = out_path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=src_ext or ".mp4", delete=False) as tmp:
+            tmp.write(video_bytes)
+            in_path = tmp.name
+        out_path = in_path + ".poster.webp"
+        result = subprocess.run(
+            ["ffmpeg", "-y", "-i", in_path,
+             "-frames:v", "1",
+             "-vf", "scale=512:512:force_original_aspect_ratio=decrease",
+             "-c:v", "libwebp", "-quality", "70",
+             out_path],
+            capture_output=True, timeout=60,
+        )
+        if result.returncode != 0 or not os.path.exists(out_path):
+            stderr = result.stderr.decode("utf-8", errors="replace")[-500:]
+            print(f"worker-comfyui - poster extract failed: {stderr}", flush=True)
+            return None
+        with open(out_path, "rb") as f:
+            return f.read()
+    except Exception as exc:
+        print(f"worker-comfyui - poster extract error: {exc}", flush=True)
+        return None
+    finally:
+        for p in (in_path, out_path):
+            if p and os.path.exists(p):
+                try:
+                    os.remove(p)
+                except OSError:
+                    pass
+
+
+def make_preview_clip(video_bytes: bytes, src_ext: str = ".mp4", duration: float = 3.0) -> bytes | None:
+    """Make a short, low-res, muted H.264 MP4 preview clip for hover playback.
+
+    ~480p (longest edge), even dimensions, faststart for inline autoplay.
+    Returns the MP4 bytes, or None on failure.
+    """
+    in_path = out_path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=src_ext or ".mp4", delete=False) as tmp:
+            tmp.write(video_bytes)
+            in_path = tmp.name
+        out_path = in_path + ".preview.mp4"
+        result = subprocess.run(
+            ["ffmpeg", "-y", "-i", in_path,
+             "-t", str(duration),
+             "-an",
+             "-vf", "scale=854:480:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2",
+             "-c:v", "libx264", "-profile:v", "baseline", "-level", "3.1",
+             "-pix_fmt", "yuv420p", "-preset", "veryfast", "-crf", "30",
+             "-movflags", "+faststart",
+             out_path],
+            capture_output=True, timeout=120,
+        )
+        if result.returncode != 0 or not os.path.exists(out_path):
+            stderr = result.stderr.decode("utf-8", errors="replace")[-500:]
+            print(f"worker-comfyui - preview clip failed: {stderr}", flush=True)
+            return None
+        with open(out_path, "rb") as f:
+            return f.read()
+    except Exception as exc:
+        print(f"worker-comfyui - preview clip error: {exc}", flush=True)
+        return None
+    finally:
+        for p in (in_path, out_path):
+            if p and os.path.exists(p):
+                try:
+                    os.remove(p)
+                except OSError:
+                    pass
+
+
 def flac_to_wav(file_bytes: bytes, filename: str) -> tuple[bytes, str]:
     """Re-encode FLAC bytes to stereo 44.1 kHz WAV. Returns (bytes, new_filename).
 
