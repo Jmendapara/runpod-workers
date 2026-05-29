@@ -58,7 +58,7 @@ def handler(job):
         return {"error": f"ComfyUI server ({client.host}) not reachable after retries."}
 
     try:
-        had_silenced_input = process_r2_inputs(workflow, r2_inputs)
+        process_r2_inputs(workflow, r2_inputs)
     except Exception as exc:
         print(f"worker-comfyui - R2 input download failed: {exc}", flush=True)
         traceback.print_exc()
@@ -110,7 +110,6 @@ def handler(job):
         job_id=job_id,
         uploader=uploader,
         uid=uid,
-        prefer_silent_mp4=had_silenced_input,
     )
 
     if exec_errors:

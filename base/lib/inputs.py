@@ -76,15 +76,17 @@ def validate_input(job_input) -> tuple[dict | None, str | None]:
     }, None
 
 
-def process_r2_inputs(workflow: dict, r2_inputs: list[dict]) -> bool:
+def process_r2_inputs(workflow: dict, r2_inputs: list[dict]) -> None:
     """Download each R2 input into /comfyui/input/ and rewrite the workflow.
 
-    Returns True iff any downloaded video lacked an audio stream and had silent
-    audio muxed in. Callers use this to adjust output handling (e.g. dropping
-    VHS's -audio.mp4 sidecar in favor of the silent .mp4 variant).
+    Video inputs with no audio stream get a silent stereo track muxed in (see
+    ensure_audio_track) so downstream nodes that assume audio exists (VHS
+    NormalizeAudioLoudness, LTX audio VAE) can run. The resulting output keeps
+    that silent track — inaudible, which is the desired behavior for audio-less
+    source clips.
     """
     if not r2_inputs:
-        return False
+        return
 
     from .r2 import make_s3_client
     from .ffmpeg_helpers import ensure_audio_track
@@ -102,7 +104,6 @@ def process_r2_inputs(workflow: dict, r2_inputs: list[dict]) -> bool:
         f"worker-comfyui - Downloading {len(r2_inputs)} R2 input(s) from '{input_bucket}'...",
         flush=True,
     )
-    any_silenced = False
     for entry in r2_inputs:
         node_id = str(entry["node_id"])
         field = entry["input_field"]
@@ -119,10 +120,7 @@ def process_r2_inputs(workflow: dict, r2_inputs: list[dict]) -> bool:
         s3.download_file(input_bucket, key, local_path)
         workflow[node_id]["inputs"][field] = filename
 
-        if ensure_audio_track(local_path):
-            any_silenced = True
-
-    return any_silenced
+        ensure_audio_track(local_path)
 
 
 def process_inline_images(workflow: dict, images: list[dict]) -> None:
