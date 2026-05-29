@@ -11,6 +11,11 @@ import uuid
 
 PRESIGN_TTL_SECONDS = 7 * 24 * 3600  # 7 days
 
+# Generated media is immutable per key, so let browsers cache it for a year.
+# Without this, players re-download the object on every remount (e.g. navigating
+# back to the Library). Set at upload so every model gets it for free.
+CACHE_CONTROL = "public, max-age=31536000"
+
 
 def _guess_content_type(ext: str) -> str:
     return {
@@ -64,6 +69,7 @@ class Uploader:
             Key=key,
             Body=file_bytes,
             ContentType=_guess_content_type(ext),
+            CacheControl=CACHE_CONTROL,
         )
         return self._client.generate_presigned_url(
             "get_object",
