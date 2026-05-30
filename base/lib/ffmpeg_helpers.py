@@ -83,7 +83,9 @@ def extract_poster(video_bytes: bytes, src_ext: str = ".mp4") -> bytes | None:
         result = subprocess.run(
             ["ffmpeg", "-y", "-i", in_path,
              "-frames:v", "1",
-             "-vf", "scale=512:512:force_original_aspect_ratio=decrease",
+             # format=yuv420p normalizes high-bit-depth/HDR sources (e.g. 10-bit)
+             # so the libwebp encode can't choke on the pixel format.
+             "-vf", "scale=512:512:force_original_aspect_ratio=decrease,format=yuv420p",
              "-c:v", "libwebp", "-quality", "70",
              out_path],
             capture_output=True, timeout=60,
