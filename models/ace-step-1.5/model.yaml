@@ -1,4 +1,27 @@
 name: ace-step-1.5
+
+model_downloads:
+  # xl-base model set (was MODEL_TYPE=ace-step-1.5-xl-base in the standalone
+  # worker's download_models.py). All files come from the public
+  # Comfy-Org/ace_step_1.5_ComfyUI_files repo; apply_model_config.py flattens
+  # each nested filename to its basename on download.
+  - source: hf
+    repo_id: Comfy-Org/ace_step_1.5_ComfyUI_files
+    filename: split_files/diffusion_models/acestep_v1.5_xl_base_bf16.safetensors
+    dest: /comfyui/models/diffusion_models/
+  - source: hf
+    repo_id: Comfy-Org/ace_step_1.5_ComfyUI_files
+    filename: split_files/text_encoders/qwen_0.6b_ace15.safetensors
+    dest: /comfyui/models/text_encoders/
+  - source: hf
+    repo_id: Comfy-Org/ace_step_1.5_ComfyUI_files
+    filename: split_files/text_encoders/qwen_4b_ace15.safetensors
+    dest: /comfyui/models/text_encoders/
+  - source: hf
+    repo_id: Comfy-Org/ace_step_1.5_ComfyUI_files
+    filename: split_files/vae/ace_1.5_vae.safetensors
+    dest: /comfyui/models/vae/
+
 output:
   type: image+audio
   transcode_flac_to_wav: true

@@ -10,6 +10,62 @@ custom_nodes:
   - repo: https://github.com/Fannovel16/ComfyUI-Frame-Interpolation
     extra_pip:
       - cupy-cuda12x
+
+model_downloads:
+  # All repos below are public — no HUGGINGFACE_ACCESS_TOKEN required.
+  # apply_model_config.py flattens each `filename` to its basename on download,
+  # reproducing the original Dockerfile's hf_hub_download + shutil.move layout.
+
+  # Wan 2.2 Animate diffusion model.
+  - source: hf
+    repo_id: Kijai/WanVideo_comfy_fp8_scaled
+    filename: Wan22Animate/Wan2_2-Animate-14B_fp8_e4m3fn_scaled_KJ.safetensors
+    dest: /comfyui/models/diffusion_models/
+
+  # Text encoder. The workflow references it as kj-umt5-xxl-enc-bf16.safetensors,
+  # so keep the original rename rather than the repo's bare basename.
+  - source: hf
+    repo_id: Kijai/WanVideo_comfy
+    filename: umt5-xxl-enc-bf16.safetensors
+    dest: /comfyui/models/text_encoders/
+    rename: kj-umt5-xxl-enc-bf16.safetensors
+
+  # VAE + CLIP vision (from the repackaged Wan 2.1 bundle).
+  - source: hf
+    repo_id: Comfy-Org/Wan_2.1_ComfyUI_repackaged
+    filename: split_files/vae/wan_2.1_vae.safetensors
+    dest: /comfyui/models/vae/
+  - source: hf
+    repo_id: Comfy-Org/Wan_2.1_ComfyUI_repackaged
+    filename: split_files/clip_vision/clip_vision_h.safetensors
+    dest: /comfyui/models/clip_vision/
+
+  # LoRAs: relight + lightx2v distill.
+  - source: hf
+    repo_id: Kijai/WanVideo_comfy
+    filename: LoRAs/Wan22_relight/WanAnimate_relight_lora_fp16_resized_from_128_to_dynamic_22.safetensors
+    dest: /comfyui/models/loras/
+  - source: hf
+    repo_id: Kijai/WanVideo_comfy
+    filename: Lightx2v/lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors
+    dest: /comfyui/models/loras/
+
+  # Preprocessing detection models (YOLO + ViTPose) for the WanAnimate preprocess node.
+  - source: hf
+    repo_id: Wan-AI/Wan2.2-Animate-14B
+    filename: process_checkpoint/det/yolov10m.onnx
+    dest: /comfyui/models/detection/
+  - source: hf
+    repo_id: JunkyByte/easy_ViTPose
+    filename: onnx/wholebody/vitpose-l-wholebody.onnx
+    dest: /comfyui/models/detection/
+
+  # SAM2 checkpoint for ComfyUI-segment-anything-2.
+  - source: hf
+    repo_id: Kijai/sam2-safetensors
+    filename: sam2.1_hiera_base_plus.safetensors
+    dest: /comfyui/models/sam2/
+
 output:
   type: image+video+gifs
   vhs_sidecar_filter: true

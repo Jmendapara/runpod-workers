@@ -14,6 +14,17 @@ custom_nodes:
       - jieba
       - soxr
       - "transformers>=5.3.0"
+model_downloads:
+  # fp32 OmniVoice set (was the standalone worker's default MODEL_TYPE=omnivoice-fp32).
+  # opensourcegen (server/models/omni-voice.js) requests model: 'OmniVoice', i.e.
+  # the k2-fsa/OmniVoice snapshot. Whisper is always required by the TTS node.
+  - source: hf-snapshot
+    repo_id: k2-fsa/OmniVoice
+    dest: /comfyui/models/omnivoice/OmniVoice
+  - source: hf-snapshot
+    repo_id: openai/whisper-large-v3-turbo
+    dest: /comfyui/models/audio_encoders/openai_whisper-large-v3-turbo
+
 post_install:
   - verify.py
 output:
