@@ -1,5 +1,44 @@
 name: 10eros
+
 custom_nodes:
   - repo: https://github.com/Lightricks/ComfyUI-LTXVideo
+    # kornia >= 0.8 removed the `pad` symbol from kornia.geometry.transform.pyramid;
+    # ComfyUI-LTXVideo/pyramid_blending.py still imports it, so the package fails
+    # to load and none of its nodes register. Pin to the last compatible line.
+    extra_pip:
+      - "kornia<0.8"
+
+model_downloads:
+  # 10Eros checkpoint — bf16 variant. opensourcegen (server/models/eros.js) is
+  # hard-coded to request '10Eros_v1_bf16.safetensors' because bf16 bundles
+  # CLIP + VAE inside the checkpoint; the fp8 file is transformer-only and won't
+  # load through CheckpointLoaderSimple. This is the file the standalone
+  # 10eros-runpod-worker baked when built with MODEL_VARIANT=bf16.
+  - source: hf
+    repo_id: TenStrip/LTX2.3-10Eros
+    filename: 10Eros_v1_bf16.safetensors
+    dest: /comfyui/models/checkpoints/
+
+  # Distilled LoRA applied on top of the base checkpoint. Lives under a
+  # distill_loras/ subdir in the repo; apply_model_config.py flattens to the
+  # basename, so it lands as loras/ltx-2.3-22b-distilled-lora-1.1_fro90_ceil72_condsafe.safetensors.
+  - source: hf
+    repo_id: SulphurAI/Sulphur-2-base
+    filename: distill_loras/ltx-2.3-22b-distilled-lora-1.1_fro90_ceil72_condsafe.safetensors
+    dest: /comfyui/models/loras/
+
+  # Spatial upscaler used by LatentUpscaleModelLoader.
+  - source: hf
+    repo_id: Lightricks/LTX-2.3
+    filename: ltx-2.3-spatial-upscaler-x2-1.0.safetensors
+    dest: /comfyui/models/latent_upscale_models/
+
+  # Gemma text encoder for LTXAVTextEncoderLoader. Nested under
+  # split_files/text_encoders/ in the repo; flattened to the basename on download.
+  - source: hf
+    repo_id: Comfy-Org/ltx-2
+    filename: split_files/text_encoders/gemma_3_12B_it_fp4_mixed.safetensors
+    dest: /comfyui/models/text_encoders/
+
 output:
   type: image+video
