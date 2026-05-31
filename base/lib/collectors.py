@@ -158,9 +158,12 @@ class CollectorSet:
 
                     item = _to_response_item(file_bytes, filename, job_id, uid, uploader, errors)
                     if item is not None:
-                        # Videos uploaded to R2 also get a poster frame + preview clip so the
-                        # app's grids don't load the full video. Best-effort; never fatal.
-                        if collector.result_key == "videos" and uploader is not None:
+                        # Generate a poster + preview clip for any VIDEO file, regardless of which
+                        # ComfyUI output key it arrived under. Native SaveVideo reports its MP4 under
+                        # "images" (result_key "images"), not "videos" — so gating on result_key alone
+                        # misses it. Gate on the file actually being a video instead.
+                        is_video_file = (filename or "").lower().endswith((".mp4", ".webm", ".mov", ".mkv"))
+                        if (collector.result_key == "videos" or is_video_file) and uploader is not None:
                             _attach_video_derivatives(item, file_bytes, filename, job_id, uid, uploader)
                         result.setdefault(collector.result_key, []).append(item)
 
