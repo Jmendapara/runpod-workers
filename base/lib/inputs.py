@@ -79,11 +79,12 @@ def validate_input(job_input) -> tuple[dict | None, str | None]:
 def process_r2_inputs(workflow: dict, r2_inputs: list[dict]) -> None:
     """Download each R2 input into /comfyui/input/ and rewrite the workflow.
 
-    Video inputs with no audio stream get a silent stereo track muxed in (see
-    ensure_audio_track) so downstream nodes that assume audio exists (VHS
-    NormalizeAudioLoudness, LTX audio VAE) can run. The resulting output keeps
-    that silent track — inaudible, which is the desired behavior for audio-less
-    source clips.
+    Video inputs whose audio is missing or shorter than the video get repaired
+    in place (see ensure_audio_track): a silent stereo track is muxed in, or a
+    short track is padded with trailing silence to the video length. This keeps
+    downstream nodes that assume full-length audio (VHS NormalizeAudioLoudness,
+    LTX audio VAE, TrimAudioDuration) from failing on audio-less or audio-short
+    source clips. The injected silence is inaudible.
     """
     if not r2_inputs:
         return
