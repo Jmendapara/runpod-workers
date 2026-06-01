@@ -40,5 +40,32 @@ model_downloads:
     filename: split_files/text_encoders/gemma_3_12B_it_fp4_mixed.safetensors
     dest: /comfyui/models/text_encoders/
 
+  # ----- Sulphur-2 text-to-video set -----
+  # opensourcegen (server/models/sulphur.js) routes ltx-2 text-to-video to this
+  # same eros endpoint when the prompt's sexual score crosses the threshold,
+  # swapping in the Sulphur distilled checkpoint + rank-768 LoRA. The gemma text
+  # encoder and spatial upscaler above are reused by that workflow.
+
+  # Sulphur distilled base checkpoint — bf16 bundles CLIP + VAE inside the
+  # checkpoint (like the 10Eros bf16), so it loads through CheckpointLoaderSimple.
+  - source: hf
+    repo_id: SulphurAI/Sulphur-2-base
+    filename: sulphur_distil_bf16.safetensors
+    dest: /comfyui/models/checkpoints/
+
+  # Sulphur rank-768 LoRA applied on top of the distilled checkpoint at strength 0.5.
+  - source: hf
+    repo_id: SulphurAI/Sulphur-2-base
+    filename: sulphur_lora_rank_768.safetensors
+    dest: /comfyui/models/loras/
+
+  # Base LTX-2.3 dev checkpoint — the Sulphur t2v graph's LTXAVTextEncoderLoader
+  # and LTXVAudioVAELoader read CLIP/VAE from this, matching the standard
+  # ltx-2-3.js text-to-video builder.
+  - source: hf
+    repo_id: Lightricks/LTX-2.3
+    filename: ltx-2.3-22b-dev.safetensors
+    dest: /comfyui/models/checkpoints/
+
 output:
   type: image+video
