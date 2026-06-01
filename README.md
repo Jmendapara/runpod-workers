@@ -8,9 +8,12 @@ declarative `model.yaml` per model.
 
 ```bash
 mkdir models/my-new-thing
-cp models/z-image-turbo/Dockerfile models/my-new-thing/
 $EDITOR models/my-new-thing/model.yaml
 ```
+
+There is no per-model Dockerfile — `build.sh` generates one automatically from
+`model.yaml` at build time (one image layer per downloaded weight; see
+[Building images](#building-images)).
 
 Minimum viable `model.yaml`:
 
@@ -49,6 +52,17 @@ Tag format pushed: `jmendapara/<model>-runpod-worker:YYYY-MM-DD-HHMM-<shortsha>`
 Model builds auto-discover the most recent base image tag from Docker Hub.
 Override with `BASE_TAG=YYYY-MM-DD-HHMM-<sha>`.
 
+### Sharded builds (automatic, all models)
+
+`build.sh` generates each model's Dockerfile on the fly from its `model.yaml`,
+baking **every `model_downloads` entry in its own `RUN`/layer**. No single
+layer holds more than one weight file, so each pushed blob stays inside Docker
+Hub's upload-session / BuildKit lease window no matter how large the model is.
+This is what prevents `blob upload invalid - upload state expired` /
+`lease does not exist` on big images — and it applies to every model, current
+and future, with nothing to maintain per model. Shard count = number of
+downloads (capped at 50 layers; beyond that they round-robin).
+
 ## Updating ComfyUI
 
 ```bash
@@ -78,8 +92,8 @@ workflow with a known-good ComfyUI workflow JSON for each model before use.
 ```
 base/                       Shared image: handler.py, lib/, runtime/, scripts/, Dockerfile
 models/<name>/
-  Dockerfile                ~10 lines, identical across all models
   model.yaml                The declarative config that drives the build + handler
+                            (build.sh generates the Dockerfile from it — none on disk)
   patches/                  Optional per-model build-time patches
 schema/model.schema.json    JSON Schema for model.yaml (single source of truth)
 tools/validate_yaml.py      Lint runner (also the CI check)
