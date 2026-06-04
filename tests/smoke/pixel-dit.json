@@ -1,17 +1,21 @@
 {
-  "_NOTE": "PiD flux2 upscale graph (ComfyUI API/prompt format). PROVISIONAL — author/verify by building this graph in a real ComfyUI >= v0.23.0 and exporting 'Save (API Format)', then replacing this object. The exact KSampler<->PiDConditioning latent wiring (latent_image source, whether negative routes through PiD, the resize node/target) MUST be confirmed from that export. Node IDs here are kept identical to opensourcegen server/models/pixel-dit-upscale-workflow.json so the server's patch points match. To run this smoke test, supply the input image either via 'r2_inputs' (R2 key) or 'images' (inline base64) targeting node 10.",
+  "_NOTE": "PiD flux2 upscale graph (ComfyUI API/prompt format). Topology mirrors the official template Comfy-Org/workflow_templates → utility_pid_latent_upscale_dit ('Latent Upscale Decode (PiD)'): encode input with the flux2 VAE, inject the LQ latent via PiDConditioning, sample with SamplerCustom + KSamplerSelect(lcm) + BasicScheduler(simple,4) onto an EmptyChromaRadianceLatentImage canvas at 4x, then decode with the built-in pixel_space VAE. Node IDs match opensourcegen server/models/pixel-dit-upscale-workflow.json. Supply the input image via 'r2_inputs' (R2 key) or 'images' (inline base64) targeting node 10. width/height on nodes 20 and 100 are patched server-side from the source image dimensions.",
   "workflow": {
     "10": { "class_type": "LoadImage", "inputs": { "image": "__INPUT_IMAGE__.png", "upload": "image" }, "_meta": { "title": "Load Image (r2 target)" } },
-    "20": { "class_type": "ImageScaleToTotalPixels", "inputs": { "image": ["10", 0], "upscale_method": "lanczos", "megapixels": 0.262144 }, "_meta": { "title": "Resize to native input (512=0.262MP / 1024=1.049MP)" } },
-    "30": { "class_type": "VAELoader", "inputs": { "vae_name": "flux2-vae.safetensors" }, "_meta": { "title": "Load flux2 VAE" } },
+    "20": { "class_type": "ImageScale", "inputs": { "image": ["10", 0], "upscale_method": "lanczos", "width": 1024, "height": 1024, "crop": "disabled" }, "_meta": { "title": "Resize to native input" } },
+    "30": { "class_type": "VAELoader", "inputs": { "vae_name": "ae.safetensors" }, "_meta": { "title": "Load flux1/Z-Image VAE (encode)" } },
     "40": { "class_type": "VAEEncode", "inputs": { "pixels": ["20", 0], "vae": ["30", 0] }, "_meta": { "title": "VAE Encode (LQ latent)" } },
-    "50": { "class_type": "UNETLoader", "inputs": { "unet_name": "pid_flux2_512_to_2048_4step_bf16.safetensors", "weight_dtype": "default" }, "_meta": { "title": "Load PiD checkpoint (auto-detected)" } },
-    "60": { "class_type": "CLIPLoader", "inputs": { "clip_name": "gemma_2_2b_it_elm_bf16.safetensors", "type": "pixeldit" }, "_meta": { "title": "Load Gemma text encoder" } },
-    "70": { "class_type": "CLIPTextEncode", "inputs": { "text": "", "clip": ["60", 0] }, "_meta": { "title": "Empty positive conditioning" } },
-    "80": { "class_type": "CLIPTextEncode", "inputs": { "text": "", "clip": ["60", 0] }, "_meta": { "title": "Empty negative conditioning" } },
-    "90": { "class_type": "PiDConditioning", "inputs": { "positive": ["70", 0], "latent": ["40", 0], "latent_format": "flux", "degrade_sigma": 0.0 }, "_meta": { "title": "PiD Conditioning (LQ injection; flux handles flux2 128ch)" } },
-    "100": { "class_type": "KSampler", "inputs": { "model": ["50", 0], "positive": ["90", 0], "negative": ["80", 0], "latent_image": ["40", 0], "seed": 0, "steps": 4, "cfg": 1.0, "sampler_name": "euler", "scheduler": "simple", "denoise": 1.0 }, "_meta": { "title": "PiD Sample (4 step)" } },
-    "110": { "class_type": "VAEDecode", "inputs": { "samples": ["100", 0], "vae": ["30", 0] }, "_meta": { "title": "VAE Decode" } },
-    "120": { "class_type": "SaveImage", "inputs": { "images": ["110", 0], "filename_prefix": "upscale/PixelDiT" }, "_meta": { "title": "Save Image" } }
+    "50": { "class_type": "UNETLoader", "inputs": { "unet_name": "pid_flux1_1024_to_4096_4step_bf16.safetensors", "weight_dtype": "default" }, "_meta": { "title": "Load PiD checkpoint" } },
+    "60": { "class_type": "CLIPLoader", "inputs": { "clip_name": "gemma_2_2b_it_elm_bf16.safetensors", "type": "pixeldit", "device": "default" }, "_meta": { "title": "Load Gemma text encoder" } },
+    "70": { "class_type": "CLIPTextEncode", "inputs": { "text": "high quality, detailed, sharp", "clip": ["60", 0] }, "_meta": { "title": "Positive conditioning (generic quality)" } },
+    "80": { "class_type": "CLIPTextEncode", "inputs": { "text": "low quality, worst quality, over-saturated, blurry, deformed, watermark", "clip": ["60", 0] }, "_meta": { "title": "Negative prompt (anti-blur)" } },
+    "90": { "class_type": "PiDConditioning", "inputs": { "positive": ["70", 0], "latent": ["40", 0], "latent_format": "flux", "degrade_sigma": 0 }, "_meta": { "title": "PiD Conditioning (LQ injection)" } },
+    "100": { "class_type": "EmptyChromaRadianceLatentImage", "inputs": { "width": 4096, "height": 4096, "batch_size": 1 }, "_meta": { "title": "Output canvas (4x input)" } },
+    "110": { "class_type": "KSamplerSelect", "inputs": { "sampler_name": "lcm" }, "_meta": { "title": "Sampler (lcm)" } },
+    "120": { "class_type": "ManualSigmas", "inputs": { "sigmas": "0.999,0.866,0.634,0.342,0" }, "_meta": { "title": "PiD sigma schedule (manual, 4 step)" } },
+    "130": { "class_type": "SamplerCustom", "inputs": { "add_noise": true, "noise_seed": 0, "cfg": 1.0, "model": ["50", 0], "positive": ["90", 0], "negative": ["80", 0], "sampler": ["110", 0], "sigmas": ["120", 0], "latent_image": ["100", 0] }, "_meta": { "title": "PiD Sample (SamplerCustom)" } },
+    "140": { "class_type": "VAELoader", "inputs": { "vae_name": "pixel_space" }, "_meta": { "title": "PiD pixel-space VAE (decode)" } },
+    "150": { "class_type": "VAEDecode", "inputs": { "samples": ["130", 0], "vae": ["140", 0] }, "_meta": { "title": "VAE Decode" } },
+    "160": { "class_type": "SaveImage", "inputs": { "images": ["150", 0], "filename_prefix": "upscale/PixelDiT" }, "_meta": { "title": "Save Image" } }
   }
 }

@@ -1,6 +1,6 @@
 name: pixel-dit
 
-# NVIDIA PixelDiT / PiD image upscaler (flux2 family).
+# NVIDIA PixelDiT / PiD image upscaler (flux1 / Z-Image family).
 #
 # The PiD/PixelDiT nodes (PiDConditioning, CLIPLoader type=pixeldit, UNETLoader
 # auto-detection) are CORE ComfyUI nodes as of v0.23.0 (Comfy-Org/ComfyUI PR
@@ -10,20 +10,25 @@ name: pixel-dit
 #   Verify the published runpod-worker-base; if older, rebuild it first:
 #     COMFYUI_VERSION=0.23.0 MODEL=base bash build.sh
 #
-# Both flux2 PiD checkpoints are baked in because the 2K vs 4K tier is chosen at
-# request time (server-side, from the input image's dimensions):
-#   2K  ->  pid_flux2_512_to_2048_4step_bf16.safetensors   (512px input  -> 2048px)
-#   4K  ->  pid_flux2_1024_to_4096_4step_bf16.safetensors  (1024px input -> 4096px)
+# Family = flux1 (NOT flux2). Every working PiD reference — the PR #14103
+# encode/decode example and the prithivMLmods/PiD-Image-Upscaler HF Space
+# (BACKBONE="zimage" + official_flux_distill checkpoints) — uses the flux1 /
+# Z-Image VAE. flux2 has no working reference and produced soft/blurry output.
+#
+# Both flux1 PiD checkpoints are baked in; the 2K vs 4K tier is chosen at request
+# time (server-side, from the input image's dimensions):
+#   2K  ->  pid_flux1_512_to_2048_4step_bf16.safetensors   (512px input  -> 2048px)
+#   4K  ->  pid_flux1_1024_to_4096_4step_bf16.safetensors  (1024px input -> 4096px)
 
 model_downloads:
-  # --- flux2 PiD upscaler checkpoints (bf16) ---
+  # --- flux1 PiD upscaler checkpoints (bf16) ---
   - source: hf
     repo_id: Comfy-Org/PixelDiT
-    filename: diffusion_models/pid_flux2_512_to_2048_4step_bf16.safetensors
+    filename: diffusion_models/pid_flux1_512_to_2048_4step_bf16.safetensors
     dest: /comfyui/models/diffusion_models/
   - source: hf
     repo_id: Comfy-Org/PixelDiT
-    filename: diffusion_models/pid_flux2_1024_to_4096_4step_bf16.safetensors
+    filename: diffusion_models/pid_flux1_1024_to_4096_4step_bf16.safetensors
     dest: /comfyui/models/diffusion_models/
 
   # --- gemma text encoder (bf16) — required for every PiD decode ---
@@ -32,10 +37,12 @@ model_downloads:
     filename: text_encoders/gemma_2_2b_it_elm_bf16.safetensors
     dest: /comfyui/models/text_encoders/
 
-  # --- flux2 VAE (128-channel latent) — not shipped in the PixelDiT repo ---
+  # --- flux1 / Z-Image VAE (16-ch) used to encode the input image to a latent.
+  #     Z-Image shares Flux.1's VAE — this is the same ae.safetensors the
+  #     z-image-turbo worker uses. ---
   - source: hf
-    repo_id: Comfy-Org/flux2-dev
-    filename: split_files/vae/flux2-vae.safetensors
+    repo_id: Comfy-Org/z_image_turbo
+    filename: split_files/vae/ae.safetensors
     dest: /comfyui/models/vae/
 
 output:
