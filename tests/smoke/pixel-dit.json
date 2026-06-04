@@ -1,0 +1,17 @@
+{
+  "_NOTE": "PiD flux2 upscale graph (ComfyUI API/prompt format). PROVISIONAL — author/verify by building this graph in a real ComfyUI >= v0.23.0 and exporting 'Save (API Format)', then replacing this object. The exact KSampler<->PiDConditioning latent wiring (latent_image source, whether negative routes through PiD, the resize node/target) MUST be confirmed from that export. Node IDs here are kept identical to opensourcegen server/models/pixel-dit-upscale-workflow.json so the server's patch points match. To run this smoke test, supply the input image either via 'r2_inputs' (R2 key) or 'images' (inline base64) targeting node 10.",
+  "workflow": {
+    "10": { "class_type": "LoadImage", "inputs": { "image": "__INPUT_IMAGE__.png", "upload": "image" }, "_meta": { "title": "Load Image (r2 target)" } },
+    "20": { "class_type": "ImageScaleToTotalPixels", "inputs": { "image": ["10", 0], "upscale_method": "lanczos", "megapixels": 0.262144 }, "_meta": { "title": "Resize to native input (512=0.262MP / 1024=1.049MP)" } },
+    "30": { "class_type": "VAELoader", "inputs": { "vae_name": "flux2-vae.safetensors" }, "_meta": { "title": "Load flux2 VAE" } },
+    "40": { "class_type": "VAEEncode", "inputs": { "pixels": ["20", 0], "vae": ["30", 0] }, "_meta": { "title": "VAE Encode (LQ latent)" } },
+    "50": { "class_type": "UNETLoader", "inputs": { "unet_name": "pid_flux2_512_to_2048_4step_bf16.safetensors", "weight_dtype": "default" }, "_meta": { "title": "Load PiD checkpoint (auto-detected)" } },
+    "60": { "class_type": "CLIPLoader", "inputs": { "clip_name": "gemma_2_2b_it_elm_bf16.safetensors", "type": "pixeldit" }, "_meta": { "title": "Load Gemma text encoder" } },
+    "70": { "class_type": "CLIPTextEncode", "inputs": { "text": "", "clip": ["60", 0] }, "_meta": { "title": "Empty positive conditioning" } },
+    "80": { "class_type": "CLIPTextEncode", "inputs": { "text": "", "clip": ["60", 0] }, "_meta": { "title": "Empty negative conditioning" } },
+    "90": { "class_type": "PiDConditioning", "inputs": { "positive": ["70", 0], "latent": ["40", 0], "latent_format": "flux", "degrade_sigma": 0.0 }, "_meta": { "title": "PiD Conditioning (LQ injection; flux handles flux2 128ch)" } },
+    "100": { "class_type": "KSampler", "inputs": { "model": ["50", 0], "positive": ["90", 0], "negative": ["80", 0], "latent_image": ["40", 0], "seed": 0, "steps": 4, "cfg": 1.0, "sampler_name": "euler", "scheduler": "simple", "denoise": 1.0 }, "_meta": { "title": "PiD Sample (4 step)" } },
+    "110": { "class_type": "VAEDecode", "inputs": { "samples": ["100", 0], "vae": ["30", 0] }, "_meta": { "title": "VAE Decode" } },
+    "120": { "class_type": "SaveImage", "inputs": { "images": ["110", 0], "filename_prefix": "upscale/PixelDiT" }, "_meta": { "title": "Save Image" } }
+  }
+}

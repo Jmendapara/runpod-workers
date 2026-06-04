@@ -1,0 +1,42 @@
+name: pixel-dit
+
+# NVIDIA PixelDiT / PiD image upscaler (flux2 family).
+#
+# The PiD/PixelDiT nodes (PiDConditioning, CLIPLoader type=pixeldit, UNETLoader
+# auto-detection) are CORE ComfyUI nodes as of v0.23.0 (Comfy-Org/ComfyUI PR
+# #14103). They are NOT custom nodes, so there is no `custom_nodes:` block here.
+#
+# REQUIREMENT: the shared base image must be built with ComfyUI >= v0.23.0.
+#   Verify the published runpod-worker-base; if older, rebuild it first:
+#     COMFYUI_VERSION=0.23.0 MODEL=base bash build.sh
+#
+# Both flux2 PiD checkpoints are baked in because the 2K vs 4K tier is chosen at
+# request time (server-side, from the input image's dimensions):
+#   2K  ->  pid_flux2_512_to_2048_4step_bf16.safetensors   (512px input  -> 2048px)
+#   4K  ->  pid_flux2_1024_to_4096_4step_bf16.safetensors  (1024px input -> 4096px)
+
+model_downloads:
+  # --- flux2 PiD upscaler checkpoints (bf16) ---
+  - source: hf
+    repo_id: Comfy-Org/PixelDiT
+    filename: diffusion_models/pid_flux2_512_to_2048_4step_bf16.safetensors
+    dest: /comfyui/models/diffusion_models/
+  - source: hf
+    repo_id: Comfy-Org/PixelDiT
+    filename: diffusion_models/pid_flux2_1024_to_4096_4step_bf16.safetensors
+    dest: /comfyui/models/diffusion_models/
+
+  # --- gemma text encoder (bf16) — required for every PiD decode ---
+  - source: hf
+    repo_id: Comfy-Org/PixelDiT
+    filename: text_encoders/gemma_2_2b_it_elm_bf16.safetensors
+    dest: /comfyui/models/text_encoders/
+
+  # --- flux2 VAE (128-channel latent) — not shipped in the PixelDiT repo ---
+  - source: hf
+    repo_id: Comfy-Org/flux2-dev
+    filename: split_files/vae/flux2-vae.safetensors
+    dest: /comfyui/models/vae/
+
+output:
+  type: image
