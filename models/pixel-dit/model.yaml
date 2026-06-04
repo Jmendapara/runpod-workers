@@ -1,27 +1,41 @@
 name: pixel-dit
 
-# NVIDIA PixelDiT / PiD image upscaler (flux1 / Z-Image family).
+# Two-stage image upscaler that mirrors the prithivMLmods/PiD-Image-Upscaler
+# HF Space:
+#   Stage 1 (deblur/refine): FLUX.2-Klein 4B distilled image-edit regenerates
+#     the input into a clean, in-focus image at <=1024px.
+#   Stage 2 (super-res):      NVIDIA PiD (flux1 / Z-Image family) upscales the
+#     refined image 4x.
 #
-# The PiD/PixelDiT nodes (PiDConditioning, CLIPLoader type=pixeldit, UNETLoader
-# auto-detection) are CORE ComfyUI nodes as of v0.23.0 (Comfy-Org/ComfyUI PR
-# #14103). They are NOT custom nodes, so there is no `custom_nodes:` block here.
+# All nodes (Flux.2 edit nodes + PiDConditioning/CLIPLoader type=pixeldit) are
+# CORE ComfyUI as of v0.23.0 (PR #14103 for PiD, flux2 support shipped alongside).
+# No custom_nodes. REQUIREMENT: base image built with ComfyUI >= v0.23.0.
+#   COMFYUI_VERSION=0.23.0 MODEL=base bash build.sh
 #
-# REQUIREMENT: the shared base image must be built with ComfyUI >= v0.23.0.
-#   Verify the published runpod-worker-base; if older, rebuild it first:
-#     COMFYUI_VERSION=0.23.0 MODEL=base bash build.sh
-#
-# Family = flux1 (NOT flux2). Every working PiD reference — the PR #14103
-# encode/decode example and the prithivMLmods/PiD-Image-Upscaler HF Space
-# (BACKBONE="zimage" + official_flux_distill checkpoints) — uses the flux1 /
-# Z-Image VAE. flux2 has no working reference and produced soft/blurry output.
-#
-# Both flux1 PiD checkpoints are baked in; the 2K vs 4K tier is chosen at request
-# time (server-side, from the input image's dimensions):
-#   2K  ->  pid_flux1_512_to_2048_4step_bf16.safetensors   (512px input  -> 2048px)
-#   4K  ->  pid_flux1_1024_to_4096_4step_bf16.safetensors  (1024px input -> 4096px)
+# PiD family = flux1 (the only family with a working reference); the 2K vs 4K
+# tier is chosen at request time from the (resized) input's longest edge:
+#   2K  ->  pid_flux1_512_to_2048_4step_bf16.safetensors   (<=512px  -> 2048px)
+#   4K  ->  pid_flux1_1024_to_4096_4step_bf16.safetensors  (>512px   -> 4096px)
 
 model_downloads:
-  # --- flux1 PiD upscaler checkpoints (bf16) ---
+  # ---------- Stage 1: FLUX.2-Klein 4B (distilled, img2img refine/deblur) ----------
+  # diffusion model
+  - source: hf
+    repo_id: Comfy-Org/flux2-klein
+    filename: split_files/diffusion_models/flux-2-klein-4b.safetensors
+    dest: /comfyui/models/diffusion_models/
+  # qwen3-4b text encoder (loaded with CLIPLoader type=flux2)
+  - source: hf
+    repo_id: Comfy-Org/flux2-klein
+    filename: split_files/text_encoders/qwen_3_4b.safetensors
+    dest: /comfyui/models/text_encoders/
+  # flux2 VAE (encode/decode for the Klein stage)
+  - source: hf
+    repo_id: Comfy-Org/flux2-klein
+    filename: split_files/vae/flux2-vae.safetensors
+    dest: /comfyui/models/vae/
+
+  # ---------- Stage 2: PiD flux1 super-resolution ----------
   - source: hf
     repo_id: Comfy-Org/PixelDiT
     filename: diffusion_models/pid_flux1_512_to_2048_4step_bf16.safetensors
@@ -30,16 +44,12 @@ model_downloads:
     repo_id: Comfy-Org/PixelDiT
     filename: diffusion_models/pid_flux1_1024_to_4096_4step_bf16.safetensors
     dest: /comfyui/models/diffusion_models/
-
-  # --- gemma text encoder (bf16) — required for every PiD decode ---
+  # gemma text encoder (CLIPLoader type=pixeldit) — required for every PiD decode
   - source: hf
     repo_id: Comfy-Org/PixelDiT
     filename: text_encoders/gemma_2_2b_it_elm_bf16.safetensors
     dest: /comfyui/models/text_encoders/
-
-  # --- flux1 / Z-Image VAE (16-ch) used to encode the input image to a latent.
-  #     Z-Image shares Flux.1's VAE — this is the same ae.safetensors the
-  #     z-image-turbo worker uses. ---
+  # flux1 / Z-Image VAE (16-ch) — encodes the Klein-refined image for PiD
   - source: hf
     repo_id: Comfy-Org/z_image_turbo
     filename: split_files/vae/ae.safetensors
