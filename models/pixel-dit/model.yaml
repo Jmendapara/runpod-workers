@@ -1,41 +1,25 @@
 name: pixel-dit
 
-# Two-stage image upscaler that mirrors the prithivMLmods/PiD-Image-Upscaler
-# HF Space:
-#   Stage 1 (deblur/refine): FLUX.2-Klein 4B distilled image-edit regenerates
-#     the input into a clean, in-focus image at <=1024px.
-#   Stage 2 (super-res):      NVIDIA PiD (flux1 / Z-Image family) upscales the
-#     refined image 4x.
+# PiD image upscaler (flux1 / Z-Image family). Single-stage: NVIDIA PiD
+# super-resolves the uploaded image 4x. (Server PIXEL_DIT_PIPELINE=pid-only.)
 #
-# All nodes (Flux.2 edit nodes + PiDConditioning/CLIPLoader type=pixeldit) are
-# CORE ComfyUI as of v0.23.0 (PR #14103 for PiD, flux2 support shipped alongside).
-# No custom_nodes. REQUIREMENT: base image built with ComfyUI >= v0.23.0.
-#   COMFYUI_VERSION=0.23.0 MODEL=base bash build.sh
+# All nodes (PiDConditioning / CLIPLoader type=pixeldit) are CORE ComfyUI as of
+# v0.23.0 (PR #14103). No custom_nodes. REQUIREMENT: base image built with
+# ComfyUI >= v0.23.0:  COMFYUI_VERSION=0.23.0 MODEL=base bash build.sh
 #
-# PiD family = flux1 (the only family with a working reference); the 2K vs 4K
-# tier is chosen at request time from the (resized) input's longest edge:
+# The 2K vs 4K tier is chosen at request time from the (resized) input's longest edge:
 #   2K  ->  pid_flux1_512_to_2048_4step_bf16.safetensors   (<=512px  -> 2048px)
 #   4K  ->  pid_flux1_1024_to_4096_4step_bf16.safetensors  (>512px   -> 4096px)
+#
+# NOTE: the optional two-stage "FLUX.2-Klein refine -> PiD" pipeline was removed
+# from this worker to keep the image small (faster cold starts). To re-enable it,
+# re-add these downloads and set PIXEL_DIT_PIPELINE=two-stage on the server:
+#   Comfy-Org/flux2-klein: split_files/diffusion_models/flux-2-klein-4b.safetensors -> /comfyui/models/diffusion_models/
+#   Comfy-Org/flux2-klein: split_files/text_encoders/qwen_3_4b.safetensors          -> /comfyui/models/text_encoders/
+#   Comfy-Org/flux2-klein: split_files/vae/flux2-vae.safetensors                    -> /comfyui/models/vae/
 
 model_downloads:
-  # ---------- Stage 1: FLUX.2-Klein 4B (distilled, img2img refine/deblur) ----------
-  # diffusion model
-  - source: hf
-    repo_id: Comfy-Org/flux2-klein
-    filename: split_files/diffusion_models/flux-2-klein-4b.safetensors
-    dest: /comfyui/models/diffusion_models/
-  # qwen3-4b text encoder (loaded with CLIPLoader type=flux2)
-  - source: hf
-    repo_id: Comfy-Org/flux2-klein
-    filename: split_files/text_encoders/qwen_3_4b.safetensors
-    dest: /comfyui/models/text_encoders/
-  # flux2 VAE (encode/decode for the Klein stage)
-  - source: hf
-    repo_id: Comfy-Org/flux2-klein
-    filename: split_files/vae/flux2-vae.safetensors
-    dest: /comfyui/models/vae/
-
-  # ---------- Stage 2: PiD flux1 super-resolution ----------
+  # ---------- PiD flux1 super-resolution ----------
   - source: hf
     repo_id: Comfy-Org/PixelDiT
     filename: diffusion_models/pid_flux1_512_to_2048_4step_bf16.safetensors
