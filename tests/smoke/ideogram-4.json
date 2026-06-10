@@ -1,0 +1,92 @@
+{
+  "_NOTE": "Ideogram 4.0 text-to-image smoke test (ComfyUI API format, base graph, Default preset, 1024x1024). Mirrors opensourcegen server/models/ideogram-4-text-to-image.js. Run: RUNPOD_API_KEY=... python tests/run_smoke.py ideogram-4 <endpoint-id>",
+  "workflow": {
+    "98:9": {
+      "inputs": { "vae_name": "flux2-vae.safetensors" },
+      "class_type": "VAELoader",
+      "_meta": { "title": "Load VAE" }
+    },
+    "98:14": {
+      "inputs": { "clip_name": "qwen3vl_8b_fp8_scaled.safetensors", "type": "ideogram4", "device": "default" },
+      "class_type": "CLIPLoader",
+      "_meta": { "title": "Load CLIP" }
+    },
+    "98:23": {
+      "inputs": { "unet_name": "ideogram4_fp8_scaled.safetensors", "weight_dtype": "default" },
+      "class_type": "UNETLoader",
+      "_meta": { "title": "Load Diffusion Model" }
+    },
+    "98:154": {
+      "inputs": { "unet_name": "ideogram4_unconditional_fp8_scaled.safetensors", "weight_dtype": "default" },
+      "class_type": "UNETLoader",
+      "_meta": { "title": "Load Diffusion Model (Unconditional)" }
+    },
+    "98:24": {
+      "inputs": { "text": "a photograph of a red fox sitting in a snowy forest at dawn, soft natural light", "clip": ["98:14", 0] },
+      "class_type": "CLIPTextEncode",
+      "_meta": { "title": "CLIP Text Encode (Positive Prompt)" }
+    },
+    "98:10": {
+      "inputs": { "conditioning": ["98:24", 0] },
+      "class_type": "ConditioningZeroOut",
+      "_meta": { "title": "ConditioningZeroOut" }
+    },
+    "98:11": {
+      "inputs": { "width": 1024, "height": 1024, "batch_size": 1 },
+      "class_type": "EmptyFlux2LatentImage",
+      "_meta": { "title": "Empty Flux 2 Latent" }
+    },
+    "98:16": {
+      "inputs": { "sampler_name": "euler" },
+      "class_type": "KSamplerSelect",
+      "_meta": { "title": "KSamplerSelect" }
+    },
+    "98:17": {
+      "inputs": { "steps": 20, "width": 1024, "height": 1024, "mu": 0.0, "std": 1.75 },
+      "class_type": "Ideogram4Scheduler",
+      "_meta": { "title": "Ideogram 4 Scheduler" }
+    },
+    "98:18": {
+      "inputs": { "noise_seed": 885894517601261 },
+      "class_type": "RandomNoise",
+      "_meta": { "title": "RandomNoise" }
+    },
+    "98:157": {
+      "inputs": { "cfg": 3, "start_percent": 0.7, "end_percent": 1, "model": ["98:23", 0] },
+      "class_type": "CFGOverride",
+      "_meta": { "title": "CFG Override" }
+    },
+    "98:155": {
+      "inputs": {
+        "cfg": 7,
+        "model": ["98:157", 0],
+        "positive": ["98:24", 0],
+        "model_negative": ["98:154", 0],
+        "negative": ["98:10", 0]
+      },
+      "class_type": "DualModelGuider",
+      "_meta": { "title": "Dual Model CFG Guider" }
+    },
+    "98:12": {
+      "inputs": {
+        "noise": ["98:18", 0],
+        "guider": ["98:155", 0],
+        "sampler": ["98:16", 0],
+        "sigmas": ["98:17", 0],
+        "latent_image": ["98:11", 0]
+      },
+      "class_type": "SamplerCustomAdvanced",
+      "_meta": { "title": "SamplerCustomAdvanced" }
+    },
+    "98:13": {
+      "inputs": { "samples": ["98:12", 0], "vae": ["98:9", 0] },
+      "class_type": "VAEDecode",
+      "_meta": { "title": "VAE Decode" }
+    },
+    "158": {
+      "inputs": { "filename_prefix": "ideogram-4", "images": ["98:13", 0] },
+      "class_type": "SaveImage",
+      "_meta": { "title": "Save Image" }
+    }
+  }
+}

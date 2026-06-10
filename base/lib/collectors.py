@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from typing import Callable, Optional
 
 from .config import OutputConfig
-from .ffmpeg_helpers import flac_to_wav, extract_poster, make_preview_clip
+from .ffmpeg_helpers import flac_to_wav, extract_poster, make_preview_clip, make_image_thumbnail
 
 
 # Type aliases
@@ -165,6 +165,9 @@ class CollectorSet:
                         is_video_file = (filename or "").lower().endswith((".mp4", ".webm", ".mov", ".mkv"))
                         if (collector.result_key == "videos" or is_video_file) and uploader is not None:
                             _attach_video_derivatives(item, file_bytes, filename, job_id, uid, uploader)
+                        elif collector.result_key == "images" and not is_video_file and uploader is not None:
+                            # Image uploaded to R2 → attach a small webp thumbnail for fast grid rendering.
+                            _attach_image_thumbnail(item, file_bytes, filename, job_id, uid, uploader)
                         result.setdefault(collector.result_key, []).append(item)
 
             other_keys = [k for k in node_output.keys() if k not in handled_keys]
@@ -202,6 +205,23 @@ def _attach_video_derivatives(item, file_bytes, filename, job_id, uid, uploader)
             print(f"worker-comfyui - Uploaded preview clip for {filename}", flush=True)
     except Exception as exc:
         print(f"worker-comfyui - preview generation error for {filename}: {exc}", flush=True)
+
+
+def _attach_image_thumbnail(item, file_bytes, filename, job_id, uid, uploader) -> None:
+    """Generate a small WebP thumbnail for an R2-uploaded image and attach its key (`thumbKey`).
+
+    The app stores `thumbKey` and signs it on read, falling back to the full image if absent.
+    Best-effort: any failure just leaves the key off.
+    """
+    ext = os.path.splitext(filename)[1] or ".png"
+    try:
+        thumb = make_image_thumbnail(file_bytes, ext)
+        if thumb:
+            key, _url = uploader.upload_returning_key(thumb, "thumb.webp", job_id, uid=uid)
+            item["thumbKey"] = key
+            print(f"worker-comfyui - Uploaded thumbnail for {filename}", flush=True)
+    except Exception as exc:
+        print(f"worker-comfyui - thumbnail generation error for {filename}: {exc}", flush=True)
 
 
 def _to_response_item(
