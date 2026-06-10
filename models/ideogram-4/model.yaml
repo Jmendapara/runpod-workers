@@ -1,0 +1,39 @@
+name: ideogram-4
+
+# Ideogram 4.0 text-to-image. All graph nodes (Ideogram4Scheduler, DualModelGuider,
+# CFGOverride, EmptyFlux2LatentImage, CLIPLoader type=ideogram4) are CORE ComfyUI —
+# no custom_nodes. REQUIREMENT: base image built with a ComfyUI version that ships
+# ideogram-4 support (recent/nightly). See docs.comfy.org/tutorials/image/ideogram/ideogram-v4.
+
+model_downloads:
+  # ---------- Ideogram 4 diffusion models (Comfy-Org, public) ----------
+  - source: hf
+    repo_id: Comfy-Org/Ideogram-4
+    filename: diffusion_models/ideogram4_fp8_scaled.safetensors
+    dest: /comfyui/models/diffusion_models/
+  - source: hf
+    repo_id: Comfy-Org/Ideogram-4
+    filename: diffusion_models/ideogram4_unconditional_fp8_scaled.safetensors
+    dest: /comfyui/models/diffusion_models/
+
+  # ---------- Text encoder (CLIPLoader type=ideogram4) ----------
+  - source: hf
+    repo_id: Comfy-Org/Qwen3-VL
+    filename: text_encoders/qwen3vl_8b_fp8_scaled.safetensors
+    dest: /comfyui/models/text_encoders/
+
+  # ---------- VAE (flux2 family, 16-ch) ----------
+  - source: hf
+    repo_id: Comfy-Org/flux2-dev
+    filename: split_files/vae/flux2-vae.safetensors
+    dest: /comfyui/models/vae/
+
+  # ---------- Realism Engine LoRA (auto-applied server-side by prompt sexual score) ----------
+  # Baked in so the single endpoint serves both LoRA and non-LoRA generations.
+  - source: hf
+    repo_id: RazzzHF/Realism_Engine_Ideogram_4
+    filename: Realism_Engine_Ideogram4_V1.safetensors
+    dest: /comfyui/models/loras/
+
+output:
+  type: image
