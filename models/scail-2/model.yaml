@@ -12,20 +12,23 @@ name: scail-2
 custom_nodes:
   - repo: https://github.com/kijai/ComfyUI-KJNodes              # GetImageRangeFromBatch, ColorMatch (chunk stitch/seam color)
   - repo: https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite # VHS_LoadVideo, VHS_VideoCombine
-  - repo: https://github.com/Fannovel16/ComfyUI-Frame-Interpolation # RIFE VFI: smooth 16->32 fps
-    extra_pip:
-      - cupy-cuda12x
 
 model_downloads:
   # All repos below are public — no HUGGINGFACE_ACCESS_TOKEN required.
   # apply_model_config.py flattens each `filename` to its basename on download;
   # the embedded workflow (server/models/scail-2-motion-control.js) references these basenames.
 
-  # SCAIL-2 diffusion model (fp8 scaled — matches the reference workflow).
+  # SCAIL-2 diffusion model (fp16 — matches the official template; higher quality than fp8).
   - source: hf
     repo_id: Comfy-Org/SCAIL-2
-    filename: diffusion_models/wan2.1_14B_SCAIL_2_fp8_scaled.safetensors
+    filename: diffusion_models/wan2.1_14B_SCAIL_2_fp16.safetensors
     dest: /comfyui/models/diffusion_models/
+
+  # SCAIL-2 DPO refinement LoRA (stacked @1.0 with lightx2v in the official template).
+  - source: hf
+    repo_id: Comfy-Org/SCAIL-2
+    filename: loras/wan2.1_SCAIL_2_DPO_lora_bf16.safetensors
+    dest: /comfyui/models/loras/
 
   # Text encoder, VAE, CLIP vision (repackaged Wan 2.1 bundle).
   - source: hf
@@ -52,9 +55,6 @@ model_downloads:
     repo_id: Comfy-Org/sam3.1
     filename: checkpoints/sam3.1_multiplex_fp16.safetensors
     dest: /comfyui/models/checkpoints/
-
-  # NOTE: the SCAIL-2 DPO LoRA (Comfy-Org/SCAIL-2 loras/wan2.1_SCAIL_2_DPO_lora_bf16.safetensors)
-  # is available but not used by the current workflow; add it here if a future graph needs it.
 
 output:
   type: image+video+gifs
