@@ -2,12 +2,19 @@ name: scail-2
 # SCAIL-2 motion-control (Wan 2.1 SCAIL-2). The SCAIL nodes (WanSCAILToVideo,
 # SCAIL2ColoredMask) and the SAM3 nodes (SAM3_VideoTrack) ship with ComfyUI CORE,
 # so the only custom nodes needed are KJNodes + VideoHelperSuite.
-# IMPORTANT: the base image's COMFYUI_VERSION must be at/after the SCAIL merge
-# (PR Comfy-Org/ComfyUI#14373, commit 184009c2…) AND the SAM3 merge (PR #13408).
-# Rebuild base with a recent COMFYUI_VERSION if its ComfyUI predates those.
+# IMPORTANT: requires a ComfyUI that includes the SCAIL nodes (PR Comfy-Org/ComfyUI#14373,
+# merged ~2026-06-09) AND the SAM3 nodes (PR #13408). The base installs ComfyUI via comfy-cli,
+# whose --version takes `latest` (newest stable release) or `nightly` (master HEAD) — NOT a commit
+# SHA. If the deployed base predates these merges (symptom: "Node 'SCAIL2 Colored Mask' not found"),
+# rebuild the base on master, then rebuild this worker:
+#   MODEL=base COMFYUI_VERSION=nightly bash build.sh
+#   MODEL=scail-2 bash build.sh
 custom_nodes:
-  - repo: https://github.com/kijai/ComfyUI-KJNodes              # DiffusionModelLoaderKJ, ImageResizeKJv2, GetImageRangeFromBatch, ColorMatch
+  - repo: https://github.com/kijai/ComfyUI-KJNodes              # GetImageRangeFromBatch, ColorMatch (chunk stitch/seam color)
   - repo: https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite # VHS_LoadVideo, VHS_VideoCombine
+  - repo: https://github.com/Fannovel16/ComfyUI-Frame-Interpolation # RIFE VFI: smooth 16->32 fps
+    extra_pip:
+      - cupy-cuda12x
 
 model_downloads:
   # All repos below are public — no HUGGINGFACE_ACCESS_TOKEN required.
