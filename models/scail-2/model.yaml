@@ -1,0 +1,54 @@
+name: scail-2
+# SCAIL-2 motion-control (Wan 2.1 SCAIL-2). The SCAIL nodes (WanSCAILToVideo,
+# SCAIL2ColoredMask) and the SAM3 nodes (SAM3_VideoTrack) ship with ComfyUI CORE,
+# so the only custom nodes needed are KJNodes + VideoHelperSuite.
+# IMPORTANT: the base image's COMFYUI_VERSION must be at/after the SCAIL merge
+# (PR Comfy-Org/ComfyUI#14373, commit 184009c2…) AND the SAM3 merge (PR #13408).
+# Rebuild base with a recent COMFYUI_VERSION if its ComfyUI predates those.
+custom_nodes:
+  - repo: https://github.com/kijai/ComfyUI-KJNodes              # DiffusionModelLoaderKJ, ImageResizeKJv2, GetImageRangeFromBatch, ColorMatch
+  - repo: https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite # VHS_LoadVideo, VHS_VideoCombine
+
+model_downloads:
+  # All repos below are public — no HUGGINGFACE_ACCESS_TOKEN required.
+  # apply_model_config.py flattens each `filename` to its basename on download;
+  # the embedded workflow (server/models/scail-2-motion-control.js) references these basenames.
+
+  # SCAIL-2 diffusion model (fp8 scaled — matches the reference workflow).
+  - source: hf
+    repo_id: Comfy-Org/SCAIL-2
+    filename: diffusion_models/wan2.1_14B_SCAIL_2_fp8_scaled.safetensors
+    dest: /comfyui/models/diffusion_models/
+
+  # Text encoder, VAE, CLIP vision (repackaged Wan 2.1 bundle).
+  - source: hf
+    repo_id: Comfy-Org/Wan_2.1_ComfyUI_repackaged
+    filename: split_files/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors
+    dest: /comfyui/models/text_encoders/
+  - source: hf
+    repo_id: Comfy-Org/Wan_2.1_ComfyUI_repackaged
+    filename: split_files/vae/wan_2.1_vae.safetensors
+    dest: /comfyui/models/vae/
+  - source: hf
+    repo_id: Comfy-Org/Wan_2.1_ComfyUI_repackaged
+    filename: split_files/clip_vision/clip_vision_h.safetensors
+    dest: /comfyui/models/clip_vision/
+
+  # lightx2v distill LoRA (loaded at strength 0.8 in the workflow).
+  - source: hf
+    repo_id: Kijai/WanVideo_comfy
+    filename: Lightx2v/lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors
+    dest: /comfyui/models/loras/
+
+  # SAM3.1 multiplex checkpoint (loaded by core CheckpointLoaderSimple → checkpoints/).
+  - source: hf
+    repo_id: Comfy-Org/sam3.1
+    filename: checkpoints/sam3.1_multiplex_fp16.safetensors
+    dest: /comfyui/models/checkpoints/
+
+  # NOTE: the SCAIL-2 DPO LoRA (Comfy-Org/SCAIL-2 loras/wan2.1_SCAIL_2_DPO_lora_bf16.safetensors)
+  # is available but not used by the current workflow; add it here if a future graph needs it.
+
+output:
+  type: image+video+gifs
+  vhs_sidecar_filter: true
