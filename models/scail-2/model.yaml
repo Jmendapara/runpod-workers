@@ -1,7 +1,8 @@
 name: scail-2
 # SCAIL-2 motion-control (Wan 2.1 SCAIL-2). The SCAIL nodes (WanSCAILToVideo,
 # SCAIL2ColoredMask) and the SAM3 nodes (SAM3_VideoTrack) ship with ComfyUI CORE,
-# so the only custom nodes needed are KJNodes + VideoHelperSuite.
+# so the only custom nodes needed are KJNodes, VideoHelperSuite, and Frame-Interpolation (RIFE).
+# Diffusion model is the FULL fp16 safetensors loaded by core UNETLoader (no GGUF).
 # IMPORTANT: requires a ComfyUI that includes the SCAIL nodes (PR Comfy-Org/ComfyUI#14373,
 # merged ~2026-06-09) AND the SAM3 nodes (PR #13408). The base installs ComfyUI via comfy-cli,
 # whose --version takes `latest` (newest stable release) or `nightly` (master HEAD) — NOT a commit
@@ -12,7 +13,6 @@ name: scail-2
 custom_nodes:
   - repo: https://github.com/kijai/ComfyUI-KJNodes              # GetImageRangeFromBatch, ColorMatch (chunk stitch/seam color)
   - repo: https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite # VHS_LoadVideo, VHS_VideoCombine
-  - repo: https://github.com/city96/ComfyUI-GGUF                # UnetLoaderGGUF (GGUF quantized diffusion model)
   - repo: https://github.com/Fannovel16/ComfyUI-Frame-Interpolation # RIFE VFI: 16->32 fps
     extra_pip:
       - cupy-cuda12x
@@ -22,11 +22,13 @@ model_downloads:
   # apply_model_config.py flattens each `filename` to its basename on download;
   # the embedded workflow (server/models/scail-2-motion-control.js) references these basenames.
 
-  # SCAIL-2 diffusion model (GGUF Q8_0 — near-fp16 quality at ~half the VRAM; loaded by UnetLoaderGGUF → models/unet/).
+  # SCAIL-2 diffusion model — FULL fp16 (32.8GB; loaded by core UNETLoader → models/diffusion_models/).
+  # H100 80GB fits it with headroom and there is no GGUF dequant overhead. The same repo also has
+  # fp8_scaled (17.7GB) and mxfp8 (17.2GB) variants if VRAM or cold-start time ever becomes a concern.
   - source: hf
-    repo_id: realrebelai/SCAIL-2_GGUF
-    filename: SCAIL-2-Q8_0.gguf
-    dest: /comfyui/models/unet/
+    repo_id: Comfy-Org/SCAIL-2
+    filename: diffusion_models/wan2.1_14B_SCAIL_2_fp16.safetensors
+    dest: /comfyui/models/diffusion_models/
 
   # SCAIL-2 DPO refinement LoRA (stacked @1.0 with lightx2v in the official template).
   - source: hf
