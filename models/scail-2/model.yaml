@@ -13,6 +13,9 @@ custom_nodes:
   - repo: https://github.com/kijai/ComfyUI-KJNodes              # GetImageRangeFromBatch, ColorMatch (chunk stitch/seam color)
   - repo: https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite # VHS_LoadVideo, VHS_VideoCombine
   - repo: https://github.com/city96/ComfyUI-GGUF                # UnetLoaderGGUF (GGUF quantized diffusion model)
+  - repo: https://github.com/Fannovel16/ComfyUI-Frame-Interpolation # RIFE VFI: 16->32 fps
+    extra_pip:
+      - cupy-cuda12x
 
 model_downloads:
   # All repos below are public — no HUGGINGFACE_ACCESS_TOKEN required.
