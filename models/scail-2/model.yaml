@@ -12,17 +12,18 @@ name: scail-2
 custom_nodes:
   - repo: https://github.com/kijai/ComfyUI-KJNodes              # GetImageRangeFromBatch, ColorMatch (chunk stitch/seam color)
   - repo: https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite # VHS_LoadVideo, VHS_VideoCombine
+  - repo: https://github.com/city96/ComfyUI-GGUF                # UnetLoaderGGUF (GGUF quantized diffusion model)
 
 model_downloads:
   # All repos below are public — no HUGGINGFACE_ACCESS_TOKEN required.
   # apply_model_config.py flattens each `filename` to its basename on download;
   # the embedded workflow (server/models/scail-2-motion-control.js) references these basenames.
 
-  # SCAIL-2 diffusion model (fp16 — matches the official template; higher quality than fp8).
+  # SCAIL-2 diffusion model (GGUF Q8_0 — near-fp16 quality at ~half the VRAM; loaded by UnetLoaderGGUF → models/unet/).
   - source: hf
-    repo_id: Comfy-Org/SCAIL-2
-    filename: diffusion_models/wan2.1_14B_SCAIL_2_fp16.safetensors
-    dest: /comfyui/models/diffusion_models/
+    repo_id: realrebelai/SCAIL-2_GGUF
+    filename: SCAIL-2-Q8_0.gguf
+    dest: /comfyui/models/unet/
 
   # SCAIL-2 DPO refinement LoRA (stacked @1.0 with lightx2v in the official template).
   - source: hf
