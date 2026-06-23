@@ -1,0 +1,27 @@
+name: krea-2-turbo
+
+# Krea 2 OSS Turbo (FP8) text-to-image. CLIPLoader(type=krea2) + UNETLoader are CORE
+# ComfyUI nodes — REQUIRES a base image built with ComfyUI >= 0.25.0 (built-in Krea2
+# support). No custom_nodes, no LoRAs. All three weights are public (no HF token).
+
+model_downloads:
+  # Krea-2-Turbo diffusion model (FP8) — AlperKTS/Krea2_FP8 (file at repo root)
+  - source: hf
+    repo_id: AlperKTS/Krea2_FP8
+    filename: krea2_turbo_fp8.safetensors
+    dest: /comfyui/models/diffusion_models/
+
+  # Text encoder — Qwen3-VL 4B fp8 (the CLIPLoader type=krea2 encoder)
+  - source: hf
+    repo_id: Comfy-Org/Qwen3-VL
+    filename: text_encoders/qwen3vl_4b_fp8_scaled.safetensors
+    dest: /comfyui/models/text_encoders/
+
+  # VAE — Qwen-Image VAE
+  - source: hf
+    repo_id: Comfy-Org/Qwen-Image_ComfyUI
+    filename: split_files/vae/qwen_image_vae.safetensors
+    dest: /comfyui/models/vae/
+
+output:
+  type: image
