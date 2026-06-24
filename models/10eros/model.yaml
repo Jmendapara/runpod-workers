@@ -9,14 +9,14 @@ custom_nodes:
       - "kornia<0.8"
 
 model_downloads:
-  # 10Eros checkpoint — bf16 variant. opensourcegen (server/models/eros.js) is
-  # hard-coded to request '10Eros_v1_bf16.safetensors' because bf16 bundles
+  # 10Eros checkpoint — v1.2 bf16 variant. opensourcegen (server/models/eros.js) is
+  # hard-coded to request '10Eros_v1.2_bf16.safetensors' because bf16 bundles
   # CLIP + VAE inside the checkpoint; the fp8 file is transformer-only and won't
-  # load through CheckpointLoaderSimple. This is the file the standalone
-  # 10eros-runpod-worker baked when built with MODEL_VARIANT=bf16.
+  # load through CheckpointLoaderSimple. v1.2 reduces face drift and folds the
+  # sulphur EXP weights into the checkpoint (see the TenStrip/LTX2.3-10Eros card).
   - source: hf
     repo_id: TenStrip/LTX2.3-10Eros
-    filename: 10Eros_v1_bf16.safetensors
+    filename: 10Eros_v1.2_bf16.safetensors
     dest: /comfyui/models/checkpoints/
 
   # Distilled LoRA applied on top of the base checkpoint. Lives under a
