@@ -2,7 +2,12 @@ name: krea-2-turbo
 
 # Krea 2 OSS Turbo (FP8) text-to-image. CLIPLoader(type=krea2) + UNETLoader are CORE
 # ComfyUI nodes — REQUIRES a base image built with ComfyUI >= 0.25.0 (built-in Krea2
-# support). No custom_nodes, no LoRAs. All three weights are public (no HF token).
+# support). One custom_node (ConditioningKrea2Rebalance), no LoRAs. All three weights
+# are public (no HF token).
+
+custom_nodes:
+  # Per-layer conditioning rebalance for Krea2 (Qwen3-VL taps). torch-only, no extra pip.
+  - repo: https://github.com/nova452/ComfyUI-ConditioningKrea2Rebalance
 
 model_downloads:
   # Krea-2-Turbo diffusion model (FP8) — AlperKTS/Krea2_FP8 (file at repo root)
