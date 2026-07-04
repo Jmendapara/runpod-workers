@@ -11,6 +11,17 @@ custom_nodes:
     extra_pip:
       - cupy-cuda12x
 
+pip_extras:
+  # onnxruntime-gpu 1.27.0 dropped CUDA 12 wheels — they link libcudart.so.13,
+  # which doesn't exist on the CUDA 12.8 base image, so `import onnxruntime`
+  # fails at ComfyUI startup and ComfyUI-WanAnimatePreprocess never registers
+  # its nodes ("Node 'Pose and Face Detection' not found"). 1.26.0 is the
+  # newest CUDA-12 build. pip_extras runs AFTER every custom node's
+  # requirements.txt, so this pin wins over the unpinned `onnxruntime-gpu`
+  # the preprocess pack pulls in. Only bump past 1.26 together with a
+  # CUDA 13 base image.
+  - "onnxruntime-gpu==1.26.0"
+
 model_downloads:
   # All repos below are public — no HUGGINGFACE_ACCESS_TOKEN required.
   # apply_model_config.py flattens each `filename` to its basename on download,
