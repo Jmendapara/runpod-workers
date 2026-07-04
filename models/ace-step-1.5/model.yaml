@@ -1,13 +1,16 @@
 name: ace-step-1.5
 
 model_downloads:
-  # xl-base model set (was MODEL_TYPE=ace-step-1.5-xl-base in the standalone
-  # worker's download_models.py). All files come from the public
-  # Comfy-Org/ace_step_1.5_ComfyUI_files repo; apply_model_config.py flattens
-  # each nested filename to its basename on download.
+  # xl-TURBO model set (was MODEL_TYPE=ace-step-1.5-xl-turbo in the standalone
+  # worker's download_models.py). The opensourcegen server's workflow hardcodes
+  # unet_name 'acestep_v1.5_xl_turbo_bf16.safetensors' (server/models/
+  # ace-step-1-5.js) and its sampling params are authored for turbo — baking
+  # xl-base fails prompt validation. Encoders/VAE are shared across variants.
+  # All files come from the public Comfy-Org/ace_step_1.5_ComfyUI_files repo;
+  # apply_model_config.py flattens each nested filename to its basename.
   - source: hf
     repo_id: Comfy-Org/ace_step_1.5_ComfyUI_files
-    filename: split_files/diffusion_models/acestep_v1.5_xl_base_bf16.safetensors
+    filename: split_files/diffusion_models/acestep_v1.5_xl_turbo_bf16.safetensors
     dest: /comfyui/models/diffusion_models/
   - source: hf
     repo_id: Comfy-Org/ace_step_1.5_ComfyUI_files

@@ -1,6 +1,10 @@
 name: omni
 custom_nodes:
   - repo: https://github.com/Saganaki22/ComfyUI-OmniVoice-TTS
+    # Pinned to the commit the validated 2026-07 build used (HEAD has not moved
+    # since 2026-06-11). Unpinned custom nodes are a quality lottery — see the
+    # hunyuan-instruct-nf4 regression. Re-verify voice output before bumping.
+    ref: 3fe8e42a6d4a03628471aa1ba8506657e2e96dea
     pip_install_requirements: false
     extra_pip:
       - "omnivoice --no-deps"
@@ -29,3 +33,7 @@ post_install:
   - verify.py
 output:
   type: image+audio
+  # ComfyUI's SaveAudio writes FLAC; the app's audio pipeline (poll.js waveform
+  # peaks, multi-speaker WAV concatenation) parses RIFF/WAV. The standalone
+  # omni worker always transcoded (_convert_flac_to_wav); keep that contract.
+  transcode_flac_to_wav: true
