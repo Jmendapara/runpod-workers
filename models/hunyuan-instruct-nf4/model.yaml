@@ -1,6 +1,14 @@
 name: hunyuan-instruct-nf4
 custom_nodes:
   - repo: https://github.com/EricRollei/Comfy_HunyuanImage3
+    # Pinned to the v1.3.0-era HEAD (Feb 21) that the known-good March prod image
+    # (standalone hunyuan-instruct-nf4-runpod-worker) was built with. The two
+    # commits after it regress this worker: eeaa92ec26 ("moe_drop_tokens +
+    # vae_dtype options") and bf738dba3f ("bucket bypass + seqlen auto-bump for
+    # native-resolution image edits") — with the distilled NF4-v2 checkpoint at
+    # steps=10 they produce under-denoised, artifacted image-edit output and
+    # slower inference. Re-verify quality before ever bumping this pin.
+    ref: e1caeb72f7dd445286c722e97d6c702d35fe7977
     extra_pip:
       - "diffusers>=0.31.0"
       - "transformers>=4.47.0,<5.0.0"

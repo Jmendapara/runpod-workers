@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -89,12 +90,21 @@ def setup_phase(cfg) -> None:
         if target.exists():
             print(f"==> Skipping clone (already exists): {target}", flush=True)
         else:
-            clone_cmd = ["git", "clone", "--depth", "1"]
-            if node.ref:
-                clone_cmd += ["--branch", node.ref]
-            clone_cmd += [repo, str(target)]
-            print(f"==> Cloning {repo}", flush=True)
-            run(clone_cmd)
+            ref = node.ref
+            # `git clone --branch` accepts branches/tags but NOT commit SHAs —
+            # for a SHA pin we need a full clone, then detach at the commit.
+            is_sha = bool(ref and re.fullmatch(r"[0-9a-fA-F]{7,40}", ref))
+            if is_sha:
+                print(f"==> Cloning {repo} (pinned commit {ref})", flush=True)
+                run(["git", "clone", repo, str(target)])
+                run(["git", "-C", str(target), "checkout", "--detach", ref])
+            else:
+                clone_cmd = ["git", "clone", "--depth", "1"]
+                if ref:
+                    clone_cmd += ["--branch", ref]
+                clone_cmd += [repo, str(target)]
+                print(f"==> Cloning {repo}" + (f" @ {ref}" if ref else ""), flush=True)
+                run(clone_cmd)
 
         sha = subprocess.run(
             ["git", "-C", str(target), "rev-parse", "--short", "HEAD"],
