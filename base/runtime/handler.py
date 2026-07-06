@@ -15,7 +15,7 @@ import uuid
 from lib.config import load_model_config
 from lib.comfy_client import ComfyClient
 from lib.collectors import build_collectors
-from lib.inputs import process_inline_images, process_r2_inputs, validate_input
+from lib.inputs import process_inline_images, process_r2_inputs, process_r2_loras, validate_input
 from lib.r2 import make_uploader
 
 import requests
@@ -50,6 +50,7 @@ def handler(job):
     workflow = validated["workflow"]
     r2_inputs = validated["r2_inputs"]
     images = validated["images"]
+    r2_loras = validated["r2_loras"]
     uid = validated.get("uid")
     comfy_org_api_key = validated.get("comfy_org_api_key")
 
@@ -70,6 +71,15 @@ def handler(job):
         print(f"worker-comfyui - Inline image decode failed: {exc}", flush=True)
         traceback.print_exc()
         return {"error": f"Failed to process inline images: {exc}"}
+
+    # Custom LoRAs must be on disk (cache hit or fresh download) BEFORE the
+    # workflow is queued — LoraLoader nodes resolve lora_name at queue time.
+    try:
+        process_r2_loras(r2_loras)
+    except Exception as exc:
+        print(f"worker-comfyui - LoRA download failed: {exc}", flush=True)
+        traceback.print_exc()
+        return {"error": f"Failed to download LoRA: {exc}"}
 
     try:
         uploader = make_uploader()
