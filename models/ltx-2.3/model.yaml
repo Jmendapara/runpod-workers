@@ -13,6 +13,33 @@ custom_nodes:
   - repo: https://github.com/city96/ComfyUI-GGUF
   - repo: https://github.com/kijai/ComfyUI-WanVideoWrapper
 
+  # ----- LipDub workflow set (workflows/lipdub.api.json) -----
+  # All three are small personal repos, so pin to reviewed SHAs.
+  # FL_ChatterboxVC: converts the LTX-generated speech into the original
+  # speaker's voice (target = the input video's audio track).
+  - repo: https://github.com/filliptm/ComfyUI_Fill-ChatterBox
+    ref: 596850bc61665e9318914841b41ee4154253f020
+  # "Apply Whisper": transcribes the input video's speech. Its requirements.txt
+  # lists the PyPI `uuid` package, which installs a Python-2-era uuid.py that
+  # shadows the stdlib module for the whole venv (the handler imports uuid) —
+  # so skip it and install the real deps directly.
+  - repo: https://github.com/yuvraj108c/ComfyUI-Whisper
+    ref: 006a709848259ed3d69e2f9fcfd7a75f6c860ddd
+    pip_install_requirements: false
+    extra_pip:
+      - openai-whisper
+      - pillow
+      - soundfile
+  # "TranslationNode": offline M2M-100 translation of the transcript into the
+  # target language. transformers/torch already ship in the base image; its
+  # requirements.txt would try to reinstall torch, so curate here too.
+  - repo: https://github.com/petr-pr/ComfyUI-TranslationNode
+    ref: aa8fb5ef67d31db44d6b73373f0253c6634fe87d
+    pip_install_requirements: false
+    extra_pip:
+      - langdetect
+      - sentencepiece
+
 pip_extras:
   - sageattention
 
@@ -80,6 +107,74 @@ model_downloads:
     # /comfyui/models/vae_approx/ dir is not enumerated by VAELoader on recent
     # ComfyUI builds, so place the file as a subdir of vae/ instead.
     dest: /comfyui/models/vae/vae_approx/
+
+  # ----- LipDub workflow's set (workflows/lipdub.api.json) -----
+  # The lipdub workflow pins the -1.1 revision of the distilled lora (the legacy
+  # set above bakes the 1.0 "-384" file under a different name, so both coexist).
+  - source: hf
+    repo_id: Lightricks/LTX-2.3
+    filename: ltx-2.3-22b-distilled-lora-384-1.1.safetensors
+    dest: /comfyui/models/loras/
+  - source: hf
+    repo_id: Lightricks/LTX-2.3-22b-IC-LoRA-LipDub
+    filename: ltx-2.3-22b-ic-lora-lipdub-0.9.safetensors
+    dest: /comfyui/models/loras/
+  # Chatterbox VC weights. load_vc_model() in Fill-ChatterBox's chatterbox_node.py
+  # requires exactly s3gen.pt + conds.pt under <models>/chatterbox/chatterbox_vc/
+  # and hits HuggingFace at request time when they're missing — bake them.
+  - source: hf
+    repo_id: ResembleAI/chatterbox
+    filename: s3gen.pt
+    dest: /comfyui/models/chatterbox/chatterbox_vc/
+  - source: hf
+    repo_id: ResembleAI/chatterbox
+    filename: conds.pt
+    dest: /comfyui/models/chatterbox/chatterbox_vc/
+  # Whisper weights for "Apply Whisper". With no stt/whisper key in
+  # extra_model_paths.yaml the node falls back to <models_dir>/stt/whisper and
+  # otherwise downloads from this same URL at request time.
+  - source: url
+    url: https://openaipublic.azureedge.net/main/whisper/models/aff26ae408abcba5fbf8813c21e62b0941638c5f6eebfb145be0c9839262a19a/large-v3-turbo.pt
+    filename: large-v3-turbo.pt
+    dest: /comfyui/models/stt/whisper/
+  # M2M-100 418M for TranslationNode, as individual files — a full snapshot
+  # would also pull the 1.9 GB rust_model.ot the node never loads. The node
+  # resolves this dir relative to the process CWD; see patches/symlink-models.py.
+  - source: hf
+    repo_id: facebook/m2m100_418M
+    filename: config.json
+    dest: /comfyui/models/translation/facebook/m2m100_418M/
+  - source: hf
+    repo_id: facebook/m2m100_418M
+    filename: generation_config.json
+    dest: /comfyui/models/translation/facebook/m2m100_418M/
+  - source: hf
+    repo_id: facebook/m2m100_418M
+    filename: pytorch_model.bin
+    dest: /comfyui/models/translation/facebook/m2m100_418M/
+  - source: hf
+    repo_id: facebook/m2m100_418M
+    filename: sentencepiece.bpe.model
+    dest: /comfyui/models/translation/facebook/m2m100_418M/
+  - source: hf
+    repo_id: facebook/m2m100_418M
+    filename: special_tokens_map.json
+    dest: /comfyui/models/translation/facebook/m2m100_418M/
+  - source: hf
+    repo_id: facebook/m2m100_418M
+    filename: tokenizer_config.json
+    dest: /comfyui/models/translation/facebook/m2m100_418M/
+  - source: hf
+    repo_id: facebook/m2m100_418M
+    filename: vocab.json
+    dest: /comfyui/models/translation/facebook/m2m100_418M/
+
+post_install:
+  # TranslationNode resolves its model dir relative to the process CWD
+  # ("models/translation/..."), and the container launches ComfyUI with CWD=/
+  # (base/Dockerfile ends with WORKDIR /). Symlink /models -> /comfyui/models so
+  # the baked weights above are found either way.
+  - patches/symlink-models.py
 
 output:
   # Includes "gifs" because the Extend Video workflow's VHS_VideoCombine nodes
