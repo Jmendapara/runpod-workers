@@ -1,7 +1,7 @@
 {
   "5047": {
     "inputs": {
-      "file": "input.mp4",
+      "file": "input_video_0.mp4",
       "video-preview": ""
     },
     "class_type": "LoadVideo",

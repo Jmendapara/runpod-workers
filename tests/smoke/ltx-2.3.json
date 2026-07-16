@@ -1,9 +1,9 @@
 {
-  "_NOTE": "LipDub smoke: dubs the video at r2_key into Spanish (TranslationNode node 9002 'target_lang' + prompt template node 5048 set the language). Upload a short talking-head clip with clear speech to the input bucket at 'smoke/lipdub-sample.mp4' before running.",
+  "_NOTE": "LipDub smoke: dubs the video at r2_key into Spanish (TranslationNode node 9002 'target_lang' + prompt template node 5048 set the language). The clip at r2_key must be a video with a visible face and clear speech. run_smoke.py wraps this object as {\"input\": ...}; wrap it yourself if POSTing directly to the RunPod endpoint.",
   "workflow": {
     "5047": {
       "inputs": {
-        "file": "input.mp4",
+        "file": "input_video_0.mp4",
         "video-preview": ""
       },
       "class_type": "LoadVideo",
@@ -842,11 +842,12 @@
       }
     }
   },
+  "uid": "bfiuPHljRVQnG6g8DPNrmpjGu8E3",
   "r2_inputs": [
     {
       "node_id": "5047",
       "input_field": "file",
-      "r2_key": "smoke/lipdub-sample.mp4"
+      "r2_key": "users/bfiuPHljRVQnG6g8DPNrmpjGu8E3/uploads/test_audio.mp4"
     }
   ]
 }
