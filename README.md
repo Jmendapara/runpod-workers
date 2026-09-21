@@ -63,6 +63,51 @@ This is what prevents `blob upload invalid - upload state expired` /
 and future, with nothing to maintain per model. Shard count = number of
 downloads (capped at 50 layers; beyond that they round-robin).
 
+## Building remotely from your laptop
+
+`tools/remote-build.sh` does the Hetzner dance for you: it logs into the build
+box with the credentials in `.env`, ships this checkout's `build.sh` over,
+launches it **detached** (it survives Ctrl-C, laptop sleep and dropped Wi-Fi)
+and streams the log live. You never open the Hetzner console or an SSH
+session by hand.
+
+One-time setup:
+
+```bash
+cp .env.example .env && chmod 600 .env
+$EDITOR .env        # HETZNER_HOST, HETZNER_PASSWORD, DOCKERHUB_TOKEN, HF/Civitai tokens
+```
+
+`.env` is gitignored — never commit it. Then:
+
+```bash
+./tools/remote-build.sh                   # pick a target from a menu
+./tools/remote-build.sh wan-animate       # build + push one model
+./tools/remote-build.sh base              # rebuild the shared base image
+./tools/remote-build.sh all               # base, then every model
+```
+
+While a build runs:
+
+- **Ctrl-C only stops watching**; the build keeps going on the box.
+- `./tools/remote-build.sh logs` reattaches to the live log (auto-reconnects on drops).
+- `./tools/remote-build.sh status` shows what is running, for how long, and disk free.
+- `./tools/remote-build.sh stop` cancels the running build (`--force` to SIGKILL).
+
+Useful flags: `--branch <b>` (default: your current local branch, which must
+be pushed), `--no-push`, `--base-tag <t>`, `--dry-run` (exercises the whole
+pipeline without building anything), `-y` (skip the confirmation),
+`--reset-hostkey` (after a Hetzner reinstall/rescue). `--help` lists the rest.
+
+Auth: the password from `HETZNER_PASSWORD` is handed to OpenSSH through its
+askpass hook (no `sshpass` needed). Set `HETZNER_SSH_KEY=~/.ssh/id_ed25519`
+to use a key instead; `./tools/remote-build.sh setup` installs your public key
+on the box so you can switch.
+
+Secrets travel over the SSH channel into a 0600 tmpfs file that the remote
+wrapper sources and deletes before the build starts — never in argv, shell
+history or on disk. The box logs out of Docker Hub when the build ends.
+
 ## Updating ComfyUI
 
 ```bash
@@ -70,51 +115,6 @@ curl -fsSL .../build.sh | COMFYUI_VERSION=latest MODEL=base bash   # rebuild bas
 curl -fsSL .../build.sh | MODEL=all bash                           # rebuild all models on new base
 ```
 
-## Validating a `model.yaml` locally
-
-```bash
-pip install PyYAML jsonschema
-python tools/validate_yaml.py models/*/model.yaml
-```
-
-## Smoke testing against a RunPod endpoint
-
-```bash
-export RUNPOD_API_KEY=...
-python tests/run_smoke.py wan-animate <endpoint-id>
-```
-
-Smoke inputs live at `tests/smoke/<model>.json` — replace the placeholder
-workflow with a known-good ComfyUI workflow JSON for each model before use.
-
-## Layout
-
-```
-base/                       Shared image: handler.py, lib/, runtime/, scripts/, Dockerfile
-models/<name>/
-  model.yaml                The declarative config that drives the build + handler
-                            (build.sh generates the Dockerfile from it — none on disk)
-  patches/                  Optional per-model build-time patches
-schema/model.schema.json    JSON Schema for model.yaml (single source of truth)
-tools/validate_yaml.py      Lint runner (also the CI check)
-tests/                      Smoke tests
-build.sh                    The one entrypoint, curl|bash-friendly
-```
-
-## Runtime env vars (set on the RunPod endpoint)
-
-R2 upload (optional — unset for base64 responses):
-- `BUCKET_ENDPOINT_URL`
-- `BUCKET_ACCESS_KEY_ID`
-- `BUCKET_SECRET_ACCESS_KEY`
-- `R2_BUCKET_NAME`
-- `R2_INPUT_BUCKET_NAME` (optional; defaults to `R2_BUCKET_NAME`)
-
-Worker tuning:
-- `REFRESH_WORKER=true` to recycle the worker after each job
-- `NETWORK_VOLUME_DEBUG=true` (default) for `/runpod-volume` diagnostics
-- `COMFY_LOG_LEVEL=DEBUG` (default), `COMFY_RESTART_DELAY=5`, `COMFY_MAX_RAPID_RESTARTS=5`
-- `WEBSOCKET_RECONNECT_ATTEMPTS=5`, `WEBSOCKET_RECONNECT_DELAY_S=3`
 `COMFYUI_VERSION` takes `latest` (newest stable release) or `nightly` (master
 HEAD) — comfy-cli does not accept a commit SHA.
 
@@ -145,8 +145,40 @@ Model builds auto-discover the *newest* base tag, so any model rebuilt without
 `BASE_TAG=` lands on the cu130 base. Already-deployed endpoint images are not
 affected until you rebuild them.
 
-- `WEBSOCKET_TRACE=true` to enable websocket-client trace logging
+## Validating a `model.yaml` locally
+
+```bash
+pip install PyYAML jsonschema
+python tools/validate_yaml.py models/*/model.yaml
+```
+
+## Smoke testing against a RunPod endpoint
+
+```bash
+export RUNPOD_API_KEY=...
+python tests/run_smoke.py wan-animate <endpoint-id>
 python tests/run_smoke.py minimax-h3 <endpoint-id>   # ~5 s 768x768 clip with audio
+```
+
+Smoke inputs live at `tests/smoke/<model>.json` — replace the placeholder
+workflow with a known-good ComfyUI workflow JSON for each model before use.
+
+## Layout
+
+```
+base/                       Shared image: handler.py, lib/, runtime/, scripts/, Dockerfile
+models/<name>/
+  model.yaml                The declarative config that drives the build + handler
+                            (build.sh generates the Dockerfile from it — none on disk)
+  patches/                  Optional per-model build-time patches
+schema/model.schema.json    JSON Schema for model.yaml (single source of truth)
+tools/validate_yaml.py      Lint runner (also the CI check)
+tools/remote-build.sh       Build on the Hetzner box from your laptop (see above)
+.env.example                Template for the gitignored .env used by remote-build.sh
+tests/                      Smoke tests
+build.sh                    The one entrypoint, curl|bash-friendly
+```
+
 ## minimax-h3 endpoint sizing
 
 Image ≈ 12.6 GB base + 44.5 GB weights. Suggested RunPod serverless settings:
@@ -163,3 +195,18 @@ Image ≈ 12.6 GB base + 44.5 GB weights. Suggested RunPod serverless settings:
   Comfy states commercial use of locally generated outputs needs a MiniMax
   commercial license (sold via Comfy).
 
+## Runtime env vars (set on the RunPod endpoint)
+
+R2 upload (optional — unset for base64 responses):
+- `BUCKET_ENDPOINT_URL`
+- `BUCKET_ACCESS_KEY_ID`
+- `BUCKET_SECRET_ACCESS_KEY`
+- `R2_BUCKET_NAME`
+- `R2_INPUT_BUCKET_NAME` (optional; defaults to `R2_BUCKET_NAME`)
+
+Worker tuning:
+- `REFRESH_WORKER=true` to recycle the worker after each job
+- `NETWORK_VOLUME_DEBUG=true` (default) for `/runpod-volume` diagnostics
+- `COMFY_LOG_LEVEL=DEBUG` (default), `COMFY_RESTART_DELAY=5`, `COMFY_MAX_RAPID_RESTARTS=5`
+- `WEBSOCKET_RECONNECT_ATTEMPTS=5`, `WEBSOCKET_RECONNECT_DELAY_S=3`
+- `WEBSOCKET_TRACE=true` to enable websocket-client trace logging
