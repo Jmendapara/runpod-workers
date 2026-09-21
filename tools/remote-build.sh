@@ -467,8 +467,17 @@ fmt_duration() {
     else printf '%ds' "$s"; fi
 }
 
+STREAM_PID=""; WATCH_TMP=""
+WATCH_RC=""; WATCH_TAGS=""; WATCH_START_EPOCH=""
+
+watch_cleanup() {
+    [ -z "$STREAM_PID" ] || kill "$STREAM_PID" 2>/dev/null || true
+    [ -z "$WATCH_TMP" ] || rm -f "$WATCH_TMP"
+}
+
 on_detach() {
     trap - INT
+    watch_cleanup
     printf '\n%s[detached]%s the build keeps running on %s.\n' "$C_Y" "$C_0" "$HETZNER_HOST" >&2
     print_detach_hints
     exit 130
@@ -478,11 +487,12 @@ remote_tail_script() {   # $1 = first line number to send (1 = whole log)
     cat <<EOF
 RPW="\$HOME/.runpod-workers-remote"
 [ -e "\$RPW/current.log" ] || { echo __RPW_NOLOG__; exit 0; }
+f="\$(readlink -f "\$RPW/current.log")"
 pid="\$(cat "\$RPW/build.pid" 2>/dev/null || true)"
 if [ -n "\$pid" ] && kill -0 -- "-\$pid" 2>/dev/null; then
-    exec tail -n +$1 -F --pid="\$pid" "\$RPW/current.log" 2>/dev/null
+    exec tail -n +$1 -f --pid="\$pid" "\$f" 2>/dev/null
 else
-    exec tail -n +$1 "\$RPW/current.log"
+    exec tail -n +$1 "\$f"
 fi
 EOF
 }
@@ -497,35 +507,81 @@ EOF
     echo "${out:-unreachable}"
 }
 
+remote_line_count() {   # lines in the log on the box right now (0 if unreachable)
+    local n
+    n="$(rssh bash -s 2>/dev/null <<'EOF'
+wc -l < "$HOME/.runpod-workers-remote/current.log" 2>/dev/null | tr -d ' '
+EOF
+)" || n=0
+    echo "${n:-0}"
+}
+
+# One log line: exit sentinel, start marker, pushed-tag lines; everything else
+# is echoed verbatim. Updates WATCH_RC / WATCH_TAGS / WATCH_START_EPOCH.
+watch_line() {
+    local line="$1" t
+    case "$line" in
+        __RPW_EXIT__=*) WATCH_RC="${line#__RPW_EXIT__=}" ;;
+        __RPW_NOLOG__)  trap - INT; watch_cleanup; die "no build has ever been run from this tool on $HETZNER_HOST" ;;
+        __RPW_START__*)
+            WATCH_START_EPOCH="${line##*epoch=}"; WATCH_START_EPOCH="${WATCH_START_EPOCH%% *}"
+            printf '%s[remote]%s %s\n' "$C_B" "$C_0" "${line#__RPW_START__ }" ;;
+        *)
+            printf '%s\n' "$line"
+            if [[ "$line" =~ $TAG_RE ]]; then
+                t="${line//[[:space:]]/}"
+                case " $WATCH_TAGS " in *" $t "*) ;; *) WATCH_TAGS="$WATCH_TAGS $t" ;; esac
+            fi ;;
+    esac
+}
+
+# Stream the log until the exit sentinel arrives. The remote tail runs in the
+# background into a local buffer file that is drained once a second (only
+# complete lines), so three failure modes are all handled from the last line
+# seen: the ssh connection drops (reconnect with backoff), the build dies
+# without a sentinel (reported), and the remote tail goes quiet although the
+# log keeps growing — seen with some tail implementations — (stream restarted).
 run_watch() {
-    local count=0 rc="" attempts=0 final_replay=0 tags="" line t start_epoch="" state got delay
+    local count=0 attempts=0 final_replay=0 stalled=0 state got seen total idle line delay t
+    WATCH_RC=""; WATCH_TAGS=""; WATCH_START_EPOCH=""
+    WATCH_TMP="$(mktemp)"
     info "Streaming the build log from $HETZNER_HOST (Ctrl-C detaches; the build keeps running)"
     trap on_detach INT
     while :; do
-        got=0
-        while IFS= read -r line; do
-            count=$((count + 1)); got=1
-            case "$line" in
-                __RPW_EXIT__=*) rc="${line#__RPW_EXIT__=}" ;;
-                __RPW_NOLOG__)  trap - INT; die "no build has ever been run from this tool on $HETZNER_HOST" ;;
-                __RPW_START__*)
-                    start_epoch="${line##*epoch=}"; start_epoch="${start_epoch%% *}"
-                    printf '%s[remote]%s %s\n' "$C_B" "$C_0" "${line#__RPW_START__ }" ;;
-                *)
-                    printf '%s\n' "$line"
-                    if [[ "$line" =~ $TAG_RE ]]; then
-                        t="${line//[[:space:]]/}"
-                        case " $tags " in *" $t "*) ;; *) tags="$tags $t" ;; esac
-                    fi ;;
-            esac
-        done < <(rssh bash -s <<<"$(remote_tail_script "$((count + 1))")")
-        [ -z "$rc" ] || break
+        : > "$WATCH_TMP"
+        rssh bash -s <<<"$(remote_tail_script "$((count + 1))")" > "$WATCH_TMP" 2>/dev/null &
+        STREAM_PID=$!
+        seen=0; idle=0; got=0; stalled=0
+        while :; do
+            total="$(wc -l < "$WATCH_TMP" | tr -d ' ')"
+            if [ "$total" -gt "$seen" ]; then
+                while IFS= read -r line; do watch_line "$line"; done \
+                    < <(tail -n "+$((seen + 1))" "$WATCH_TMP" | head -n "$((total - seen))")
+                count=$((count + total - seen)); seen=$total; got=1; idle=0
+                [ -z "$WATCH_RC" ] || break
+            fi
+            kill -0 "$STREAM_PID" 2>/dev/null || break          # stream ended (EOF)
+            sleep 1; idle=$((idle + 1))
+            if [ "$idle" -ge 90 ]; then                          # quiet for 90 s: stalled?
+                idle=0
+                if [ "$(remote_line_count)" -gt "$count" ]; then
+                    warn "the log stream from $HETZNER_HOST went quiet although the log grew; restarting it from line $((count + 1))"
+                    stalled=1
+                    break
+                fi
+            fi
+        done
+        kill "$STREAM_PID" 2>/dev/null || true
+        wait "$STREAM_PID" 2>/dev/null || true
+        STREAM_PID=""
+        [ -z "$WATCH_RC" ] || break
+        [ "$stalled" = 0 ] || continue
         # Stream ended without the exit sentinel: connection drop, or the build died.
         state="$(remote_state)"
         case "$state" in
             idle)
                 if [ "$final_replay" = 1 ]; then
-                    trap - INT
+                    trap - INT; watch_cleanup
                     die "the build on $HETZNER_HOST ended without an exit marker (OOM kill? reboot?). Inspect with: $PROG status"
                 fi
                 final_replay=1 ;;
@@ -533,7 +589,7 @@ run_watch() {
                 [ "$got" = 0 ] || attempts=0
                 attempts=$((attempts + 1))
                 if [ "$attempts" -gt 40 ]; then
-                    trap - INT
+                    trap - INT; watch_cleanup
                     warn "lost the connection to $HETZNER_HOST; the build is still running there."
                     print_detach_hints
                     exit 130
@@ -544,17 +600,18 @@ run_watch() {
         esac
     done
     trap - INT
+    rm -f "$WATCH_TMP"; WATCH_TMP=""
     local elapsed=""
-    [ -z "$start_epoch" ] || elapsed=" in $(fmt_duration $(( $(date +%s) - start_epoch )))"
+    [ -z "$WATCH_START_EPOCH" ] || elapsed=" in $(fmt_duration $(( $(date +%s) - WATCH_START_EPOCH )))"
     echo "============================================="
-    if [ "$rc" = 0 ]; then
+    if [ "$WATCH_RC" = 0 ]; then
         printf ' %s✓ Build finished%s (exit 0)%s\n' "$C_G" "$C_0" "$elapsed"
     else
-        printf ' %s✗ Build FAILED%s (exit %s)%s\n' "$C_R" "$C_0" "$rc" "$elapsed"
+        printf ' %s✗ Build FAILED%s (exit %s)%s\n' "$C_R" "$C_0" "$WATCH_RC" "$elapsed"
     fi
-    for t in $tags; do echo "     image: $t"; done
+    for t in $WATCH_TAGS; do echo "     image: $t"; done
     echo "============================================="
-    return "$rc"
+    return "$WATCH_RC"
 }
 
 # =============================================================================
