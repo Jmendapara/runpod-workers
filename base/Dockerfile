@@ -1,10 +1,10 @@
 # Build from REPO ROOT context with `-f base/Dockerfile` so the schema is reachable.
-ARG BASE_IMAGE=nvidia/cuda:12.8.1-cudnn-runtime-ubuntu24.04
+ARG BASE_IMAGE=nvidia/cuda:13.0.3-cudnn-runtime-ubuntu24.04
 FROM ${BASE_IMAGE}
 
 ARG COMFYUI_VERSION=latest
-ARG CUDA_VERSION_FOR_COMFY=12.8
-ARG PYTORCH_INDEX_URL=https://download.pytorch.org/whl/cu128
+ARG CUDA_VERSION_FOR_COMFY=13.0
+ARG PYTORCH_INDEX_URL=https://download.pytorch.org/whl/cu130
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PIP_PREFER_BINARY=1
@@ -46,9 +46,15 @@ ENV PATH="/opt/venv/bin:${PATH}"
 
 RUN uv pip install comfy-cli pip setuptools wheel
 
-# Install ComfyUI via comfy-cli, then force-reinstall PyTorch from the cu128
+# Install ComfyUI via comfy-cli, then force-reinstall PyTorch from the cu130
 # index. The reinstall is ~3 GB; doing it once in the base means model images
 # never pay this cost.
+#
+# CUDA >= 13 matters: comfy/quant_ops.py disables comfy-kitchen's CUDA kernel
+# registry when torch.version.cuda < 13, which drops int8_convrot / nvfp4
+# weights (MiniMax H3) onto the slow dequant fallback. Rollback to a cu128 base
+# is a build-arg override (see build.sh: CUDA_BASE_IMAGE / CUDA_VERSION_FOR_COMFY
+# / PYTORCH_INDEX_URL), not a Dockerfile edit.
 RUN /usr/bin/yes | comfy --workspace /comfyui install \
         --version "${COMFYUI_VERSION}" \
         --cuda-version "${CUDA_VERSION_FOR_COMFY}" \

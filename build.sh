@@ -31,6 +31,15 @@ set -euo pipefail
 #   BASE_TAG=...                Pin a base tag for model builds; else auto-discover
 #   NO_PUSH=1                   Build only, skip docker push
 #   COMFYUI_VERSION=latest      ComfyUI version (only used for `base` builds)
+#   CUDA_BASE_IMAGE=...         Override the nvidia/cuda base image (base builds only;
+#                               default lives in base/Dockerfile ARG BASE_IMAGE)
+#   CUDA_VERSION_FOR_COMFY=...  Override comfy-cli --cuda-version (base builds only)
+#   PYTORCH_INDEX_URL=...       Override the torch wheel index (base builds only)
+#                               e.g. rollback to cu128:
+#                                 CUDA_BASE_IMAGE=nvidia/cuda:12.8.1-cudnn-runtime-ubuntu24.04 \
+#                                 CUDA_VERSION_FOR_COMFY=12.8 \
+#                                 PYTORCH_INDEX_URL=https://download.pytorch.org/whl/cu128 \
+#                                 MODEL=base bash build.sh
 #   HUGGINGFACE_ACCESS_TOKEN    Passed through to apply_model_config.py for gated repos
 #   CIVITAI_TOKEN               Passed through for any model_downloads with auth_header_env=CIVITAI_TOKEN
 #
@@ -251,11 +260,19 @@ EOF
 build_base() {
     local tag="${BASE_IMAGE_NAME}:${BUILD_TAG}"
 
+    # Optional CUDA/torch stack overrides. Defaults live in base/Dockerfile;
+    # only forwarded when set so a plain `MODEL=base` build stays reproducible.
+    local cuda_args=()
+    [ -n "${CUDA_BASE_IMAGE:-}" ]        && cuda_args+=(--build-arg "BASE_IMAGE=${CUDA_BASE_IMAGE}")
+    [ -n "${CUDA_VERSION_FOR_COMFY:-}" ] && cuda_args+=(--build-arg "CUDA_VERSION_FOR_COMFY=${CUDA_VERSION_FOR_COMFY}")
+    [ -n "${PYTORCH_INDEX_URL:-}" ]      && cuda_args+=(--build-arg "PYTORCH_INDEX_URL=${PYTORCH_INDEX_URL}")
+
     echo "[4/5] Building base image → ${tag}"
     _build_and_push "${tag}" "." \
         --platform linux/amd64 \
         -f base/Dockerfile \
-        --build-arg "COMFYUI_VERSION=${COMFYUI_VERSION}"
+        --build-arg "COMFYUI_VERSION=${COMFYUI_VERSION}" \
+        ${cuda_args[@]+"${cuda_args[@]}"}
 
     echo "============================================="
     echo " ✓ Built$([ -z "${NO_PUSH:-}" ] && echo " and pushed") base image:"

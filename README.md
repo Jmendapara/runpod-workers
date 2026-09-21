@@ -1,7 +1,7 @@
 # runpod-workers
 
 Consolidated RunPod serverless ComfyUI workers. One shared base image (CUDA
-12.8.1 + PyTorch cu128 + ComfyUI + the universal handler) plus a small
+13.0.3 + PyTorch cu130 + ComfyUI + the universal handler) plus a small
 declarative `model.yaml` per model.
 
 ## Adding a new model
@@ -66,7 +66,7 @@ downloads (capped at 50 layers; beyond that they round-robin).
 ## Updating ComfyUI
 
 ```bash
-curl -fsSL .../build.sh | COMFYUI_VERSION=0.4.5 MODEL=base bash    # rebuild base
+curl -fsSL .../build.sh | COMFYUI_VERSION=latest MODEL=base bash   # rebuild base (CUDA 13.0.3 / torch cu130)
 curl -fsSL .../build.sh | MODEL=all bash                           # rebuild all models on new base
 ```
 
@@ -115,4 +115,51 @@ Worker tuning:
 - `NETWORK_VOLUME_DEBUG=true` (default) for `/runpod-volume` diagnostics
 - `COMFY_LOG_LEVEL=DEBUG` (default), `COMFY_RESTART_DELAY=5`, `COMFY_MAX_RAPID_RESTARTS=5`
 - `WEBSOCKET_RECONNECT_ATTEMPTS=5`, `WEBSOCKET_RECONNECT_DELAY_S=3`
+`COMFYUI_VERSION` takes `latest` (newest stable release) or `nightly` (master
+HEAD) — comfy-cli does not accept a commit SHA.
+
+The base's CUDA/torch stack defaults live in `base/Dockerfile` (currently
+`nvidia/cuda:13.0.3-cudnn-runtime-ubuntu24.04` + `--cuda-version 13.0` +
+`https://download.pytorch.org/whl/cu130`). CUDA >= 13 is required for ComfyUI's
+comfy-kitchen CUDA kernels (int8_convrot / nvfp4 weights, e.g. minimax-h3); on
+cu128 those run on a slow dequant fallback. To roll a base back to cu128 without
+editing the Dockerfile:
+
+```bash
+curl -fsSL .../build.sh | CUDA_BASE_IMAGE=nvidia/cuda:12.8.1-cudnn-runtime-ubuntu24.04 \
+  CUDA_VERSION_FOR_COMFY=12.8 PYTORCH_INDEX_URL=https://download.pytorch.org/whl/cu128 \
+  MODEL=base bash
+```
+
+### Base image compatibility
+
+| Model | Base | Notes |
+|---|---|---|
+| `minimax-h3` | cu130 base (any tag built after the CUDA 13 switch) | Needs ComfyUI >= 0.30.0 |
+| `scail-2` | **pin `BASE_TAG=2026-07-07-1526-510c57c`** until validated on cu130 | `extra_pip: cupy-cuda12x` → needs `cupy-cuda13x` on a cu130 base |
+| `wan-animate` | **pin `BASE_TAG=2026-07-07-1526-510c57c`** until validated on cu130 | `onnxruntime-gpu` is pinned for CUDA 12.8 (commit 17d0400); needs a CUDA 13 build |
+| `ltx-2.3` | **pin `BASE_TAG=2026-07-07-1526-510c57c`** until validated on cu130 | `pip_extras: sageattention` untested against torch cu130 |
+| everything else | untested on cu130 — pin the old tag until rebuilt + smoke-tested | |
+
+Model builds auto-discover the *newest* base tag, so any model rebuilt without
+`BASE_TAG=` lands on the cu130 base. Already-deployed endpoint images are not
+affected until you rebuild them.
+
 - `WEBSOCKET_TRACE=true` to enable websocket-client trace logging
+python tests/run_smoke.py minimax-h3 <endpoint-id>   # ~5 s 768x768 clip with audio
+## minimax-h3 endpoint sizing
+
+Image ≈ 12.6 GB base + 44.5 GB weights. Suggested RunPod serverless settings:
+
+- GPU: H100 80GB (alt: RTX PRO 6000 Blackwell 96GB). ~45 GB of weights stay
+  resident, so 48 GB cards are too tight for 15 s / 1344x768 clips.
+- Container disk: 80 GB. No network volume (weights are baked in).
+- Workers: min 0 / max 1 to start. FlashBoot on. Execution timeout >= 1200 s
+  (15 s clips at 8 steps).
+- No start command — the image runs its built-in `/start.sh`.
+- Env: only the four R2 vars below (`BUCKET_ENDPOINT_URL`, `BUCKET_ACCESS_KEY_ID`,
+  `BUCKET_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME`).
+- License: MiniMax H3 weights are under the minimax-h3-community-license-agreement;
+  Comfy states commercial use of locally generated outputs needs a MiniMax
+  commercial license (sold via Comfy).
+
