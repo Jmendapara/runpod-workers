@@ -1,0 +1,36 @@
+name: qwen-image-2-1
+
+# Qwen Image 2.1 — ONE model for text-to-image AND multi-reference image editing
+# (TextEncodeQwenImage21's autogrow `images` input takes image_1..image_16; the
+# official template documents up to 10 references, which is what the site allows).
+# Every node in both graphs is CORE ComfyUI (UNETLoader, CLIPLoader type=qwen_image,
+# VAELoader, TextEncodeQwenImage21, QwenImage21Cache, KSampler, VAEDecode) — no
+# custom_nodes. REQUIREMENTS:
+#   * a base image built with ComfyUI >= v0.37.0 (Qwen Image 2.1 support landed
+#     2026-09-19, first release 2026-09-21);
+#   * the CUDA 13 base (>= 2026-09-22-0516-9e98cc5): the int8_convrot weights below
+#     need comfy-kitchen's CUDA kernels, which ComfyUI disables on cu128 (slow dequant).
+# Graphs are built server-side (pixel-dream server/models/qwen-image-2-1.js); input
+# images arrive as r2_inputs targeting the LoadImage nodes. All weights are public.
+
+model_downloads:
+  # Diffusion model — int8 ConvRot (template default; 7.3 GB, ~2x lighter than bf16)
+  - source: hf
+    repo_id: Comfy-Org/Qwen-Image-2.1
+    filename: diffusion_models/qwen_image_2.1_int8_convrot.safetensors
+    dest: /comfyui/models/diffusion_models/
+
+  # Text encoder — Qwen3-VL 8B int8 ConvRot (CLIPLoader type=qwen_image; 9.4 GB)
+  - source: hf
+    repo_id: Comfy-Org/Qwen-Image-2.1
+    filename: text_encoders/qwen3vl_8b_int8_convrot.safetensors
+    dest: /comfyui/models/text_encoders/
+
+  # VAE — 4-channel (alpha-capable) Qwen Image 2.1 VAE, bf16 (0.7 GB)
+  - source: hf
+    repo_id: Comfy-Org/Qwen-Image-2.1
+    filename: vae/qwen_image_2.1_vae_bf16.safetensors
+    dest: /comfyui/models/vae/
+
+output:
+  type: image

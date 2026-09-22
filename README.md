@@ -135,6 +135,7 @@ curl -fsSL .../build.sh | CUDA_BASE_IMAGE=nvidia/cuda:12.8.1-cudnn-runtime-ubunt
 
 | Model | Base | Notes |
 |---|---|---|
+| `qwen-image-2-1` | cu130 base `2026-09-22-0516-9e98cc5` or later | Needs ComfyUI >= 0.37.0 (`TextEncodeQwenImage21` / `QwenImage21Cache`, released 2026-09-21). int8_convrot weights need CUDA 13 for the comfy-kitchen kernels; on cu128 they hit the slow dequant fallback |
 | `minimax-h3` | cu130 base built from a Dockerfile that installs `gcc` + `libc6-dev` (2026-09-22 or later) | Needs ComfyUI >= 0.30.0. Triton JIT-compiles kernel launchers at runtime; without a C compiler the MiniMax node fails with "Failed to find C compiler" |
 | `scail-2` | **pin `BASE_TAG=2026-07-07-1526-510c57c`** until validated on cu130 | `extra_pip: cupy-cuda12x` → needs `cupy-cuda13x` on a cu130 base |
 | `wan-animate` | **pin `BASE_TAG=2026-07-07-1526-510c57c`** until validated on cu130 | `onnxruntime-gpu` is pinned for CUDA 12.8 (commit 17d0400); needs a CUDA 13 build |
@@ -194,6 +195,22 @@ Image ≈ 12.6 GB base + 44.5 GB weights. Suggested RunPod serverless settings:
 - License: MiniMax H3 weights are under the minimax-h3-community-license-agreement;
   Comfy states commercial use of locally generated outputs needs a MiniMax
   commercial license (sold via Comfy).
+
+## qwen-image-2-1 endpoint sizing
+
+Image ≈ 12.6 GB base + 17.3 GB weights (int8_convrot diffusion + text encoder, bf16
+VAE). Suggested RunPod serverless settings:
+
+- GPU: the 48 GB class (L40S / RTX 6000 Ada / L40 / A40 / RTX A6000) plus RTX 5090
+  (32 GB). Weights stay resident at ~17 GB; the multi-image edit KV cache
+  (`QwenImage21Cache`, device `auto`) spills to RAM when VRAM is short.
+- Container disk: 50 GB. No network volume (weights are baked in).
+- Workers: min 0 / max 2 to start. FlashBoot on. Execution timeout 600 s.
+- `minCudaVersion` 13.0 — the image is built on the cu130 base.
+- No start command — the image runs its built-in `/start.sh`.
+- Env: only the four R2 vars below.
+- Graphs (text-to-image and 1–10-reference edit) are built by the caller; see
+  `tests/smoke/qwen-image-2-1.json` for the t2i shape.
 
 ## Runtime env vars (set on the RunPod endpoint)
 

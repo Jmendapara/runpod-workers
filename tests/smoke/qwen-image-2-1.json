@@ -1,0 +1,61 @@
+{
+  "_NOTE": "Qwen Image 2.1 text-to-image smoke test (ComfyUI API format, official t2i template graph at 512x512 / 8 steps for speed; production uses 25). Mirrors pixel-dream server/models/qwen-image-2-1.js. The edit graph adds QwenImage21Cache on the model and LoadImage nodes wired into TextEncodeQwenImage21 as images.image_1..image_N (r2_inputs). Run: RUNPOD_API_KEY=... python tests/run_smoke.py qwen-image-2-1 <endpoint-id>",
+  "workflow": {
+    "unet_loader": {
+      "inputs": { "unet_name": "qwen_image_2.1_int8_convrot.safetensors", "weight_dtype": "default" },
+      "class_type": "UNETLoader",
+      "_meta": { "title": "Load Diffusion Model" }
+    },
+    "clip_loader": {
+      "inputs": { "clip_name": "qwen3vl_8b_int8_convrot.safetensors", "type": "qwen_image", "device": "default" },
+      "class_type": "CLIPLoader",
+      "_meta": { "title": "Load CLIP" }
+    },
+    "vae_loader": {
+      "inputs": { "vae_name": "qwen_image_2.1_vae_bf16.safetensors" },
+      "class_type": "VAELoader",
+      "_meta": { "title": "Load VAE" }
+    },
+    "encode": {
+      "inputs": {
+        "clip": ["clip_loader", 0],
+        "prompt": "a photograph of a red fox sitting in a snowy forest at dawn, soft natural light",
+        "negative_prompt": "",
+        "resolution": 1024
+      },
+      "class_type": "TextEncodeQwenImage21",
+      "_meta": { "title": "Text Encode Qwen Image 2.1" }
+    },
+    "latent": {
+      "inputs": { "width": 512, "height": 512, "batch_size": 1 },
+      "class_type": "EmptyLatentImage",
+      "_meta": { "title": "Empty Latent Image" }
+    },
+    "ksampler": {
+      "inputs": {
+        "seed": 593103825222985,
+        "steps": 8,
+        "cfg": 1,
+        "sampler_name": "euler",
+        "scheduler": "simple",
+        "denoise": 1,
+        "model": ["unet_loader", 0],
+        "positive": ["encode", 0],
+        "negative": ["encode", 1],
+        "latent_image": ["latent", 0]
+      },
+      "class_type": "KSampler",
+      "_meta": { "title": "KSampler" }
+    },
+    "vae_decode": {
+      "inputs": { "samples": ["ksampler", 0], "vae": ["vae_loader", 0] },
+      "class_type": "VAEDecode",
+      "_meta": { "title": "VAE Decode" }
+    },
+    "save": {
+      "inputs": { "filename_prefix": "qwen-image-2-1", "images": ["vae_decode", 0] },
+      "class_type": "SaveImage",
+      "_meta": { "title": "Save Image" }
+    }
+  }
+}
