@@ -186,7 +186,12 @@ def download_phase(cfg, shard_k: int, shard_n: int) -> None:
         elif dl.source == "url":
             final_path = dest_dir / dl.filename
             print(f"==> [{index}] URL download: {dl.url} -> {final_path}", flush=True)
-            wget_cmd = ["wget", "-q", "--show-progress", "-O", str(final_path)]
+            # curl, not wget: wget re-sends custom headers to every redirect hop, so the
+            # bearer token leaks onto the presigned S3/R2 URL Civitai now redirects to and
+            # the object store rejects the request (conflicting auth → HTTP 400). curl drops
+            # a custom Authorization header on cross-host redirects (since 7.58).
+            curl_cmd = ["curl", "-fSL", "--retry", "3", "--retry-delay", "5",
+                        "--progress-bar", "-o", str(final_path)]
             if dl.auth_header_env:
                 token = os.environ.get(dl.auth_header_env)
                 if not token:
@@ -195,9 +200,9 @@ def download_phase(cfg, shard_k: int, shard_n: int) -> None:
                         file=sys.stderr,
                     )
                     sys.exit(2)
-                wget_cmd += ["--header", f"Authorization: Bearer {token}"]
-            wget_cmd.append(dl.url)
-            run(wget_cmd)
+                curl_cmd += ["-H", f"Authorization: Bearer {token}"]
+            curl_cmd.append(dl.url)
+            run(curl_cmd)
             manifest_downloads.append(f"url {dl.url} -> {final_path}")
 
         else:

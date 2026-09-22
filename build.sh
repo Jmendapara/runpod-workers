@@ -190,6 +190,10 @@ render_model_dockerfile() {
 ARG BASE_VERSION
 FROM jmendapara/runpod-worker-base:${BASE_VERSION}
 
+# The checkout's build-time runtime script overrides the copy baked into the
+# base image, so downloader fixes ship with a model build (no base rebuild).
+COPY .worker-runtime/apply_model_config.py /opt/worker/apply_model_config.py
+
 COPY model.yaml /etc/worker/model.yaml
 COPY . /tmp/model-ctx/
 
@@ -323,9 +327,18 @@ build_model() {
     shards="$(render_model_dockerfile "${model_dir}" "${dockerfile}")"
     echo "       Generated sharded Dockerfile: ${shards} weight layer(s) → ${dockerfile}"
 
+    # Stage the build context: the model dir plus the checkout's runtime script
+    # (see the COPY .worker-runtime/... line in the generated Dockerfile).
+    local context
+    context="$(mktemp -d "/tmp/context.${model}.XXXXXX")"
+    cp -R "${model_dir}/." "${context}/"
+    mkdir -p "${context}/.worker-runtime"
+    cp base/runtime/apply_model_config.py "${context}/.worker-runtime/"
+    chmod +x "${context}/.worker-runtime/apply_model_config.py"
+
     echo "[4/5] Building model → ${tag}"
     export DOCKER_BUILDKIT=1
-    _build_and_push "${tag}" "${model_dir}" \
+    _build_and_push "${tag}" "${context}" \
         --platform linux/amd64 \
         -f "${dockerfile}" \
         --build-arg "BASE_VERSION=${base_tag}" \
