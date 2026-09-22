@@ -135,7 +135,7 @@ curl -fsSL .../build.sh | CUDA_BASE_IMAGE=nvidia/cuda:12.8.1-cudnn-runtime-ubunt
 
 | Model | Base | Notes |
 |---|---|---|
-| `minimax-h3` | cu130 base (any tag built after the CUDA 13 switch) | Needs ComfyUI >= 0.30.0 |
+| `minimax-h3` | cu130 base built from a Dockerfile that installs `gcc` + `libc6-dev` (2026-09-22 or later) | Needs ComfyUI >= 0.30.0. Triton JIT-compiles kernel launchers at runtime; without a C compiler the MiniMax node fails with "Failed to find C compiler" |
 | `scail-2` | **pin `BASE_TAG=2026-07-07-1526-510c57c`** until validated on cu130 | `extra_pip: cupy-cuda12x` → needs `cupy-cuda13x` on a cu130 base |
 | `wan-animate` | **pin `BASE_TAG=2026-07-07-1526-510c57c`** until validated on cu130 | `onnxruntime-gpu` is pinned for CUDA 12.8 (commit 17d0400); needs a CUDA 13 build |
 | `ltx-2.3` | **pin `BASE_TAG=2026-07-07-1526-510c57c`** until validated on cu130 | `pip_extras: sageattention` untested against torch cu130 |

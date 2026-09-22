@@ -15,11 +15,17 @@ ENV PIP_NO_INPUT=1
 # System deps. --no-install-recommends keeps the image lean and sidesteps Ubuntu
 # mirror flakes for unneeded packages. libsndfile1 + ffmpeg are needed by the
 # audio/video collectors (FLAC->WAV transcode, VHS sidecar post-processing).
+# gcc + libc6-dev: Triton JIT-compiles a C launcher stub per kernel at runtime
+# and fails with "Failed to find C compiler" without them (seen on minimax-h3:
+# the quantized int8/nvfp4 path runs Triton kernels). The runtime CUDA image
+# ships no compiler; python3.12-dev already provides the Python headers.
 RUN apt-get update -o Acquire::Retries=3 && \
     apt-get install -y --no-install-recommends -o Acquire::Retries=3 \
     python3.12 \
     python3.12-venv \
     python3.12-dev \
+    gcc \
+    libc6-dev \
     git \
     wget \
     curl \

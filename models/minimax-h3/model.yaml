@@ -12,6 +12,10 @@ name: minimax-h3
 #   * CUDA 13 base (nvidia/cuda:13.0.3 + torch cu130). comfy/quant_ops.py calls
 #     ck.registry.disable("cuda") when torch.version.cuda < 13, so the int8_convrot
 #     unet and the nvfp4 text encoder fall back to the slow dequant path on cu128.
+#   * A C compiler in the base (gcc + libc6-dev, added to base/Dockerfile 2026-09-22).
+#     The quantized path runs Triton kernels, and Triton compiles a C launcher stub
+#     per kernel at runtime. Symptom on an older base: the MiniMaxH3ImageToVideo node
+#     fails with "Failed to find C compiler. Please specify via CC environment variable".
 #   Build order:
 #     MODEL=base COMFYUI_VERSION=latest bash build.sh
 #     MODEL=minimax-h3 bash build.sh
