@@ -2,7 +2,7 @@ name: krea-2-turbo
 
 # Krea 2 OSS Turbo (FP8) text-to-image. CLIPLoader(type=krea2) + UNETLoader are CORE
 # ComfyUI nodes — REQUIRES a base image built with ComfyUI >= 0.25.0 (built-in Krea2
-# support). One custom_node (ConditioningKrea2Rebalance) + one baked LoRA. All three weights
+# support). One custom_node (ConditioningKrea2Rebalance) + five baked LoRAs. All three weights
 # are public (no HF token).
 
 custom_nodes:
@@ -29,12 +29,42 @@ model_downloads:
     dest: /comfyui/models/vae/
 
   # ---------- LoRAs (user-selectable; server injects LoraLoaderModelOnly) ----------
-  # Krea 2 NSFW v4.3_EXP (Civitai model 2725430, version 3147117 — pinned so a
-  # rebuild never silently picks up a newer version). Canonical Civitai filename.
-  # Civitai downloads require a CIVITAI_TOKEN env var at build time.
+  # All from Civitai, pinned to a version id so a rebuild never silently picks up
+  # a newer version. Canonical Civitai filenames (the server's KREA_2_LORA_MAP
+  # references them). Civitai downloads require CIVITAI_TOKEN at build time.
+
+  # Krea 2 NSFW v4.3_EXP (model 2725430 / version 3147117)
   - source: url
     url: https://civitai.com/api/download/models/3147117
     filename: KNP_000003000.safetensors
+    dest: /comfyui/models/loras/
+    auth_header_env: CIVITAI_TOKEN
+
+  # Realism Engine — Krea 2 v3.1 (model 2688234 / version 3109006)
+  - source: url
+    url: https://civitai.com/api/download/models/3109006
+    filename: realism_engine_krea2_v3.1.safetensors
+    dest: /comfyui/models/loras/
+    auth_header_env: CIVITAI_TOKEN
+
+  # Velvet's Mythic Fantasy Styles — Portrait, Krea 2 (model 599757 / version 3135757)
+  - source: url
+    url: https://civitai.com/api/download/models/3135757
+    filename: Krea2MythP0rtr4itStyle.safetensors
+    dest: /comfyui/models/loras/
+    auth_header_env: CIVITAI_TOKEN
+
+  # Realistic Snapshot — Krea 2 v0.5 (model 2268008 / version 3084537)
+  - source: url
+    url: https://civitai.com/api/download/models/3084537
+    filename: RealisticSnapshotKrea2.safetensors
+    dest: /comfyui/models/loras/
+    auth_header_env: CIVITAI_TOKEN
+
+  # Mystic XXX — Krea 2 v3 (model 2728644 / version 3116175)
+  - source: url
+    url: https://civitai.com/api/download/models/3116175
+    filename: MysticXXX_KREA2_v3.safetensors
     dest: /comfyui/models/loras/
     auth_header_env: CIVITAI_TOKEN
 
