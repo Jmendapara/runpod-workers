@@ -2,7 +2,7 @@ name: krea-2-turbo
 
 # Krea 2 OSS Turbo (FP8) text-to-image. CLIPLoader(type=krea2) + UNETLoader are CORE
 # ComfyUI nodes — REQUIRES a base image built with ComfyUI >= 0.25.0 (built-in Krea2
-# support). One custom_node (ConditioningKrea2Rebalance), no LoRAs. All three weights
+# support). One custom_node (ConditioningKrea2Rebalance) + one baked LoRA. All three weights
 # are public (no HF token).
 
 custom_nodes:
@@ -27,6 +27,16 @@ model_downloads:
     repo_id: Comfy-Org/Qwen-Image_ComfyUI
     filename: split_files/vae/qwen_image_vae.safetensors
     dest: /comfyui/models/vae/
+
+  # ---------- LoRAs (user-selectable; server injects LoraLoaderModelOnly) ----------
+  # Krea 2 NSFW v4.3_EXP (Civitai model 2725430, version 3147117 — pinned so a
+  # rebuild never silently picks up a newer version). Canonical Civitai filename.
+  # Civitai downloads require a CIVITAI_TOKEN env var at build time.
+  - source: url
+    url: https://civitai.com/api/download/models/3147117
+    filename: KNP_000003000.safetensors
+    dest: /comfyui/models/loras/
+    auth_header_env: CIVITAI_TOKEN
 
 output:
   type: image
