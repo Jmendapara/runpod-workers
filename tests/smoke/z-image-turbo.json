@@ -1,4 +1,168 @@
 {
-  "_NOTE": "Placeholder. Paste a known-good workflow JSON for this model here. The smoke runner POSTs this object as the 'input' field; the schema should match what the worker's handler.validate_input() expects (workflow + optional r2_inputs/images + optional uid).",
-  "workflow": {}
+  "workflow": {
+    "2": {
+      "inputs": {
+        "value": "candid smartphone photo of a woman in a red summer dress on a beach at golden hour, natural skin texture"
+      },
+      "class_type": "PrimitiveStringMultiline",
+      "_meta": {
+        "title": "Prompt"
+      }
+    },
+    "3": {
+      "inputs": {
+        "filename_prefix": "z-image",
+        "images": [
+          "1:8",
+          0
+        ]
+      },
+      "class_type": "SaveImage",
+      "_meta": {
+        "title": "Save Image"
+      }
+    },
+    "1:30": {
+      "inputs": {
+        "clip_name": "qwen_3_4b.safetensors",
+        "type": "lumina2",
+        "device": "default"
+      },
+      "class_type": "CLIPLoader",
+      "_meta": {
+        "title": "Load CLIP"
+      }
+    },
+    "1:29": {
+      "inputs": {
+        "vae_name": "ae.safetensors"
+      },
+      "class_type": "VAELoader",
+      "_meta": {
+        "title": "Load VAE"
+      }
+    },
+    "1:8": {
+      "inputs": {
+        "samples": [
+          "1:3",
+          0
+        ],
+        "vae": [
+          "1:29",
+          0
+        ]
+      },
+      "class_type": "VAEDecode",
+      "_meta": {
+        "title": "VAE Decode"
+      }
+    },
+    "1:13": {
+      "inputs": {
+        "width": 768,
+        "height": 768,
+        "batch_size": 1
+      },
+      "class_type": "EmptySD3LatentImage",
+      "_meta": {
+        "title": "EmptySD3LatentImage"
+      }
+    },
+    "1:28": {
+      "inputs": {
+        "unet_name": "z_image_turbo_bf16.safetensors",
+        "weight_dtype": "default"
+      },
+      "class_type": "UNETLoader",
+      "_meta": {
+        "title": "Load Diffusion Model"
+      }
+    },
+    "lora_1": {
+      "inputs": {
+        "lora_name": "ZITnsfwLoRAv3.safetensors",
+        "strength_model": 1,
+        "model": [
+          "1:28",
+          0
+        ]
+      },
+      "class_type": "LoraLoaderModelOnly",
+      "_meta": {
+        "title": "LoRA 1: zit-nsfw"
+      }
+    },
+    "1:11": {
+      "inputs": {
+        "shift": 3,
+        "model": [
+          "lora_1",
+          0
+        ]
+      },
+      "class_type": "ModelSamplingAuraFlow",
+      "_meta": {
+        "title": "ModelSamplingAuraFlow"
+      }
+    },
+    "1:27": {
+      "inputs": {
+        "text": [
+          "2",
+          0
+        ],
+        "clip": [
+          "1:30",
+          0
+        ]
+      },
+      "class_type": "CLIPTextEncode",
+      "_meta": {
+        "title": "CLIP Text Encode (Prompt)"
+      }
+    },
+    "1:33": {
+      "inputs": {
+        "conditioning": [
+          "1:27",
+          0
+        ]
+      },
+      "class_type": "ConditioningZeroOut",
+      "_meta": {
+        "title": "ConditioningZeroOut"
+      }
+    },
+    "1:3": {
+      "inputs": {
+        "seed": 42,
+        "steps": 8,
+        "cfg": 1,
+        "sampler_name": "res_multistep",
+        "scheduler": "simple",
+        "denoise": 1,
+        "model": [
+          "1:11",
+          0
+        ],
+        "positive": [
+          "1:27",
+          0
+        ],
+        "negative": [
+          "1:33",
+          0
+        ],
+        "latent_image": [
+          "1:13",
+          0
+        ]
+      },
+      "class_type": "KSampler",
+      "_meta": {
+        "title": "KSampler"
+      }
+    }
+  }
 }

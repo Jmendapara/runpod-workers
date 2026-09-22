@@ -45,5 +45,68 @@ model_downloads:
     dest: /comfyui/models/loras/
     auth_header_env: CIVITAI_TOKEN
 
+
+  # 5) Z-image cum on body v1.0 (Civitai model 2178509 / version 2453150). Civitai's
+  #    filename has spaces ("cum on body Z.safetensors"); saved with underscores.
+  - source: url
+    url: https://civitai.com/api/download/models/2453150
+    filename: cum_on_body_Z.safetensors
+    dest: /comfyui/models/loras/
+    auth_header_env: CIVITAI_TOKEN
+
+  # 6) Z IMAGE PAWG v1.0 (Civitai model 2262743 / version 2547021 — the only Turbo
+  #    version; BASE/BASE2 target Z-Image Base). Canonical filename.
+  - source: url
+    url: https://civitai.com/api/download/models/2547021
+    filename: P0WG.safetensors
+    dest: /comfyui/models/loras/
+    auth_header_env: CIVITAI_TOKEN
+
+  # 7) Z-image thick fit v1.0 (Civitai model 2174856 / version 2449133). Civitai's
+  #    filename has spaces ("thick fit Z.safetensors"); saved with underscores.
+  - source: url
+    url: https://civitai.com/api/download/models/2449133
+    filename: thick_fit_Z.safetensors
+    dest: /comfyui/models/loras/
+    auth_header_env: CIVITAI_TOKEN
+
+  # 8) Character Design Sheet helper — Z-Image Turbo version (Civitai model 100435 /
+  #    version 2500612). Canonical filename.
+  - source: url
+    url: https://civitai.com/api/download/models/2500612
+    filename: CharacterDesign-IZT-V1.safetensors
+    dest: /comfyui/models/loras/
+    auth_header_env: CIVITAI_TOKEN
+
+  # 9) Famegrid Realism — Z-Image Spicy Edition v2 (Civitai model 2088956 / version
+  #    3018207). fp32, ~1.4 GB. Canonical filename.
+  - source: url
+    url: https://civitai.com/api/download/models/3018207
+    filename: famegrid_spice_v2_z_image_fp32.safetensors
+    dest: /comfyui/models/loras/
+    auth_header_env: CIVITAI_TOKEN
+
+  # 10) Labiaplasty / innie adjuster v3.0 ZImage-Turbo (Civitai model 112299 / version
+  #     2553573 — the Turbo-tagged version; v6 targets Z-Image Base). Canonical filename.
+  - source: url
+    url: https://civitai.com/api/download/models/2553573
+    filename: m99_labiaplasty_pussy_3_zimageturbo.safetensors
+    dest: /comfyui/models/loras/
+    auth_header_env: CIVITAI_TOKEN
+
+  # 11) Z-Image GodPussy v1.0 (Civitai model 2222911 / version 2502526). Canonical filename.
+  - source: url
+    url: https://civitai.com/api/download/models/2502526
+    filename: gp-zimage_000008000.safetensors
+    dest: /comfyui/models/loras/
+    auth_header_env: CIVITAI_TOKEN
+
+  # 12) Z-Image Turbo NSFW LoRA v3 (Civitai model 2279079 / version 2898951). Canonical filename.
+  - source: url
+    url: https://civitai.com/api/download/models/2898951
+    filename: ZITnsfwLoRAv3.safetensors
+    dest: /comfyui/models/loras/
+    auth_header_env: CIVITAI_TOKEN
+
 output:
   type: image

@@ -163,6 +163,22 @@ python tests/run_smoke.py minimax-h3 <endpoint-id>   # ~5 s 768x768 clip with au
 Smoke inputs live at `tests/smoke/<model>.json` — replace the placeholder
 workflow with a known-good ComfyUI workflow JSON for each model before use.
 
+## Rolling a new image onto a RunPod endpoint
+
+Endpoint templates named `…__template__…` are invisible to the REST `/v1/templates`
+API, and swapping the template alone does NOT replace idle/FlashBoot workers — jobs keep
+landing on the old image until every worker is recycled.
+
+```bash
+export RUNPOD_API_KEY=...
+# 1. swap the template image (dry run without -y; --expect-name guards against the wrong endpoint id)
+tools/runpod-set-template-image.py <endpoint-id> jmendapara/<model>-runpod-worker:<tag> --expect-name "PD - Z Image Turbo - Dev" -y
+# 2. drain + restore workers so every worker cold-starts on the new image
+tools/runpod-recycle-workers.sh <endpoint-id>
+# 3. smoke it
+python tests/run_smoke.py <model> <endpoint-id>
+```
+
 ## Layout
 
 ```
@@ -174,6 +190,8 @@ models/<name>/
 schema/model.schema.json    JSON Schema for model.yaml (single source of truth)
 tools/validate_yaml.py      Lint runner (also the CI check)
 tools/remote-build.sh       Build on the Hetzner box from your laptop (see above)
+tools/runpod-set-template-image.py  Swap an endpoint template's image (GraphQL saveTemplate)
+tools/runpod-recycle-workers.sh     Drain + restore an endpoint's workers after a swap
 .env.example                Template for the gitignored .env used by remote-build.sh
 tests/                      Smoke tests
 build.sh                    The one entrypoint, curl|bash-friendly
