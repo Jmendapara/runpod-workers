@@ -23,7 +23,8 @@ name: minimax-h3
 #     MODEL=minimax-h3 bash build.sh
 #
 # Sampling is fixed by the apps (opensourcegen + pixel-dream server/models/minimax-h3.js):
-# fl2va: 8-step turbo LoRA @1.0; ref2va: 4-step turbo LoRA @1.0; both res_multistep /
+# fl2va: 8-step turbo LoRA @1.0; ref2va: 4-step turbo LoRA @1.0 (+ the NSFW LoRA
+# when the prompt is sexual enough); both res_multistep /
 # simple, BasicGuider (no CFG, no negative prompt), 24 fps, 768p canvas (short edge
 # 768, area <= 768*1344, /32), length on the model's 17k+5 frame grid (124 = ~5 s ...
 # 362 = ~15 s).
@@ -84,6 +85,18 @@ model_downloads:
     repo_id: Comfy-Org/MiniMax-H3
     filename: loras/minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16.safetensors
     dest: /comfyui/models/loras/
+
+  # MiniMax H3 NSFW Unlocked (MidLAB) — https://civitai.com/models/2925727
+  # (model 2925727 / version 3345855 "M3_V1.1"). Rank-16 LoRA on the 50 blocks'
+  # mlp.fc1/fc2 only (fp32, 164 MB). Trained on fl2va (t2v + i2v); fl2va and ref2va
+  # share the exact tensor layout, so it also loads on ref2va (reference-to-video,
+  # multiframe). Auto-applied by pixel-dream above a prompt sexual score, chained
+  # after the turbo LoRA. Author: strength 0.3–1 (0.5 sweet spot).
+  - source: url
+    url: https://civitai.com/api/download/models/3345855
+    filename: M3_Unlocked_V2.1.safetensors
+    dest: /comfyui/models/loras/
+    auth_header_env: CIVITAI_TOKEN
 
 output:
   type: video   # SaveVideo emits under ComfyUI's "videos" history key
