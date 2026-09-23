@@ -182,11 +182,13 @@ build.sh                    The one entrypoint, curl|bash-friendly
 
 ## minimax-h3 endpoint sizing
 
-Image ≈ 12.6 GB base + 44.5 GB weights. Suggested RunPod serverless settings:
+Image ≈ 12.6 GB base + 67.5 GB weights (fl2va + ref2va int8 diffusion models,
+nvfp4 text encoder, both VAEs, both turbo LoRAs). Suggested RunPod serverless settings:
 
 - GPU: H100 80GB (alt: RTX PRO 6000 Blackwell 96GB). ~45 GB of weights stay
-  resident, so 48 GB cards are too tight for 15 s / 1344x768 clips.
-- Container disk: 80 GB. No network volume (weights are baked in).
+  resident per mode (only one diffusion model is loaded at a time), so 48 GB cards
+  are too tight for 15 s / 1344x768 clips.
+- Container disk: 120 GB. No network volume (weights are baked in).
 - Workers: min 0 / max 1 to start. FlashBoot on. Execution timeout >= 1200 s
   (15 s clips at 8 steps).
 - No start command — the image runs its built-in `/start.sh`.

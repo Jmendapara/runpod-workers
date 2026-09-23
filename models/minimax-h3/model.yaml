@@ -1,10 +1,12 @@
 name: minimax-h3
-# MiniMax H3 — text-to-video + image-to-video with native stereo audio
+# MiniMax H3 — text-to-video, first/last-frame image-to-video, reference-to-video
+# and multiframe reference (chained MiniMaxH3AddGuide), all with native stereo audio
 # (https://docs.comfy.org/tutorials/video/minimax/minimax-h3).
 #
 # ALL nodes are ComfyUI CORE: MiniMaxH3ImageToVideo (t2va when no first_frame is
-# connected, fl2va when one is), CLIPLoader type=minimax, VAEDecodeAudio,
-# CreateVideo, SaveVideo. No custom nodes.
+# connected, fl2va when one is), MiniMaxH3ReferenceToVideo (ref2va — a SEPARATE
+# diffusion model file), MiniMaxH3AddGuide (multiframe anchors, ComfyUI >= 0.37.0),
+# CLIPLoader type=minimax, VAEDecodeAudio, CreateVideo, SaveVideo. No custom nodes.
 #
 # REQUIREMENTS (both come from the shared base, not this file):
 #   * ComfyUI >= 0.30.0 — the MiniMax H3 nodes landed in comfyanonymous/ComfyUI#15224
@@ -20,10 +22,11 @@ name: minimax-h3
 #     MODEL=base COMFYUI_VERSION=latest bash build.sh
 #     MODEL=minimax-h3 bash build.sh
 #
-# Sampling is fixed by the app (opensourcegen server/models/minimax-h3.js):
-# turbo LoRA @1.0, 8 steps, res_multistep / simple, BasicGuider (no CFG, no
-# negative prompt), 24 fps, 768p canvas (short edge 768, area <= 768*1344, /32),
-# length on the model's 17k+5 frame grid (124 = ~5 s ... 362 = ~15 s).
+# Sampling is fixed by the apps (opensourcegen + pixel-dream server/models/minimax-h3.js):
+# fl2va: 8-step turbo LoRA @1.0; ref2va: 4-step turbo LoRA @1.0; both res_multistep /
+# simple, BasicGuider (no CFG, no negative prompt), 24 fps, 768p canvas (short edge
+# 768, area <= 768*1344, /32), length on the model's 17k+5 frame grid (124 = ~5 s ...
+# 362 = ~15 s).
 #
 # LICENSE: Comfy-Org/MiniMax-H3 is published under the
 # minimax-h3-community-license-agreement. The Comfy docs state that commercial use
@@ -33,7 +36,7 @@ name: minimax-h3
 model_downloads:
   # All files are public on Hugging Face — no HUGGINGFACE_ACCESS_TOKEN required.
   # apply_model_config.py flattens each `filename` to its basename on download;
-  # the app's workflow builder references these basenames. ~44.5 GB total.
+  # the app's workflow builder references these basenames. ~67.5 GB total.
 
   # Diffusion model — fl2va (first/last-frame + text), pruned, int8 convrot. 20.97 GB.
   # Loaded by core UNETLoader. Comfy-Org: prefer int8_convrot over fp8_scaled on cu130.
@@ -66,6 +69,20 @@ model_downloads:
   - source: hf
     repo_id: Comfy-Org/MiniMax-H3
     filename: loras/minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors
+    dest: /comfyui/models/loras/
+
+  # Diffusion model — ref2va (reference images/videos/audio + text), pruned, int8
+  # convrot. 20.97 GB. Used by MiniMaxH3ReferenceToVideo (reference-to-video and
+  # multiframe reference); the fl2va file above cannot take references.
+  - source: hf
+    repo_id: Comfy-Org/MiniMax-H3
+    filename: diffusion_models/minimax_h3_ref2va_pruned_int8_convrot.safetensors
+    dest: /comfyui/models/diffusion_models/
+
+  # lightx2v turbo LoRA for the ref2va model, 4-step variant (bf16). 1.96 GB.
+  - source: hf
+    repo_id: Comfy-Org/MiniMax-H3
+    filename: loras/minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16.safetensors
     dest: /comfyui/models/loras/
 
 output:
