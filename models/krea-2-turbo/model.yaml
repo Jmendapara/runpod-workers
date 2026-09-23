@@ -2,7 +2,7 @@ name: krea-2-turbo
 
 # Krea 2 OSS Turbo (FP8) text-to-image. CLIPLoader(type=krea2) + UNETLoader are CORE
 # ComfyUI nodes — REQUIRES a base image built with ComfyUI >= 0.25.0 (built-in Krea2
-# support). One custom_node (ConditioningKrea2Rebalance) + five baked LoRAs. All three weights
+# support). One custom_node (ConditioningKrea2Rebalance) + six baked LoRAs. All three weights
 # are public (no HF token).
 
 custom_nodes:
@@ -65,6 +65,13 @@ model_downloads:
   - source: url
     url: https://civitai.com/api/download/models/3116175
     filename: MysticXXX_KREA2_v3.safetensors
+    dest: /comfyui/models/loras/
+    auth_header_env: CIVITAI_TOKEN
+
+  # SNOFS (Sex, Nudes, Other Fun Stuff) — Krea 2 v1.4, a LoKR (model 1972981 / version 3290120)
+  - source: url
+    url: https://civitai.com/api/download/models/3290120
+    filename: snofs_krea_v1_4.safetensors
     dest: /comfyui/models/loras/
     auth_header_env: CIVITAI_TOKEN
 
