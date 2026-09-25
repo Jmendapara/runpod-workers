@@ -63,8 +63,10 @@ model_downloads:
     repo_id: Lightricks/LTX-2.3
     filename: ltx-2.3-22b-distilled-lora-384.safetensors
     dest: /comfyui/models/loras/
-  - source: hf
-    repo_id: Lightricks/LTX-2.3
+  # Lightricks deleted this file from the repo on 2026-08-10 (commit 6f3520585aa2); pinned to the
+  # last revision that has it so rebuilds stay byte-identical to the deployed images.
+  - source: url
+    url: https://huggingface.co/Lightricks/LTX-2.3/resolve/7caa482d5cd10a2eae6b34cb48f093ebc45a263e/ltx-2.3-spatial-upscaler-x2-1.0.safetensors
     filename: ltx-2.3-spatial-upscaler-x2-1.0.safetensors
     dest: /comfyui/models/latent_upscale_models/
   - source: hf
