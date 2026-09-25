@@ -16,8 +16,16 @@ BASE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__
 sys.path.insert(0, BASE_DIR)
 
 
+class StubTarget:
+    """Stand-in for lib.r2.BucketTarget — only the fields inputs.py reads."""
+
+    def __init__(self, input_bucket: str = "bucket"):
+        self.input_bucket = input_bucket
+
+
 class StubS3:
-    def __init__(self, payload: bytes = b"x" * 16):
+    def __init__(self, target=None, payload: bytes = b"x" * 16):
+        self.target = target
         self.payload = payload
         self.downloads: list[tuple[str, str, str]] = []
 
@@ -110,32 +118,27 @@ def test_r2_loras_same_key_duplicate_allowed():
 # ---- process_r2_loras ----
 
 class _LoraEnv:
-    """Temp loras dir + bucket env + fresh stub client, restored on exit."""
+    """Temp loras dir + a resolved bucket target + fresh stub client, restored on exit.
+
+    The handler resolves the job's BucketTarget (lib.r2) and hands it to
+    process_r2_loras / process_r2_inputs; `bucket=None` models an endpoint with
+    no R2 configured (target None).
+    """
 
     def __init__(self, bucket="test-bucket"):
         self.bucket = bucket
+        self.target = None if bucket is None else StubTarget(input_bucket=bucket)
 
     def __enter__(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.prev_dir = inputs.COMFY_LORA_DIR
         inputs.COMFY_LORA_DIR = self.tmp.name
-        self.prev_env = {k: os.environ.get(k) for k in ("R2_BUCKET_NAME", "R2_INPUT_BUCKET_NAME")}
-        os.environ.pop("R2_INPUT_BUCKET_NAME", None)
-        if self.bucket is None:
-            os.environ.pop("R2_BUCKET_NAME", None)
-        else:
-            os.environ["R2_BUCKET_NAME"] = self.bucket
         self.stub = StubS3()
-        _fake_r2.make_s3_client = lambda: self.stub
+        _fake_r2.make_s3_client = lambda target: self.stub
         return self
 
     def __exit__(self, *exc):
         inputs.COMFY_LORA_DIR = self.prev_dir
-        for k, v in self.prev_env.items():
-            if v is None:
-                os.environ.pop(k, None)
-            else:
-                os.environ[k] = v
         self.tmp.cleanup()
         return False
 
@@ -145,7 +148,7 @@ class _LoraEnv:
 
 def test_process_r2_loras_downloads_fresh_file():
     with _LoraEnv() as env:
-        inputs.process_r2_loras([{ "r2_key": "users/u1/loras/a.safetensors", "filename": "a.safetensors", "size_bytes": 16 }])
+        inputs.process_r2_loras([{ "r2_key": "users/u1/loras/a.safetensors", "filename": "a.safetensors", "size_bytes": 16 }], env.target)
         assert len(env.stub.downloads) == 1
         assert env.stub.downloads[0][0] == "test-bucket"
         assert os.path.getsize(env.path("a.safetensors")) == 16
@@ -157,7 +160,7 @@ def test_process_r2_loras_cache_hit_skips_download():
     with _LoraEnv() as env:
         with open(env.path("a.safetensors"), "wb") as f:
             f.write(b"x" * 16)
-        inputs.process_r2_loras([{ "r2_key": "k", "filename": "a.safetensors", "size_bytes": 16 }])
+        inputs.process_r2_loras([{ "r2_key": "k", "filename": "a.safetensors", "size_bytes": 16 }], env.target)
         assert env.stub.downloads == []
 
 
@@ -165,7 +168,7 @@ def test_process_r2_loras_cache_hit_without_size_hint():
     with _LoraEnv() as env:
         with open(env.path("a.safetensors"), "wb") as f:
             f.write(b"x" * 5)
-        inputs.process_r2_loras([{ "r2_key": "k", "filename": "a.safetensors" }])
+        inputs.process_r2_loras([{ "r2_key": "k", "filename": "a.safetensors" }], env.target)
         assert env.stub.downloads == []
 
 
@@ -173,31 +176,87 @@ def test_process_r2_loras_size_mismatch_redownloads():
     with _LoraEnv() as env:
         with open(env.path("a.safetensors"), "wb") as f:
             f.write(b"x" * 5)  # truncated leftover
-        inputs.process_r2_loras([{ "r2_key": "k", "filename": "a.safetensors", "size_bytes": 16 }])
+        inputs.process_r2_loras([{ "r2_key": "k", "filename": "a.safetensors", "size_bytes": 16 }], env.target)
         assert len(env.stub.downloads) == 1
         assert os.path.getsize(env.path("a.safetensors")) == 16
 
 
-def test_process_r2_loras_requires_bucket_env():
+def test_process_r2_loras_requires_bucket_target():
     with _LoraEnv(bucket=None) as env:
         try:
-            inputs.process_r2_loras([{ "r2_key": "k", "filename": "a.safetensors" }])
+            inputs.process_r2_loras([{ "r2_key": "k", "filename": "a.safetensors" }], env.target)
         except ValueError as exc:
             assert "No input bucket configured" in str(exc)
         else:
-            raise AssertionError("expected ValueError when no bucket env is set")
+            raise AssertionError("expected ValueError when the job has no bucket target")
         assert env.stub.downloads == []
 
 
 def test_process_r2_loras_empty_list_is_noop():
-    # Must not require bucket env or touch disk.
-    prev = {k: os.environ.pop(k, None) for k in ("R2_BUCKET_NAME", "R2_INPUT_BUCKET_NAME")}
+    # Must not require a bucket target or touch disk.
+    inputs.process_r2_loras([], None)
+
+
+def test_process_r2_loras_downloads_from_target_input_bucket():
+    with _LoraEnv(bucket="uploads-bucket") as env:
+        inputs.process_r2_loras([{ "r2_key": "k", "filename": "a.safetensors" }], env.target)
+        assert env.stub.downloads[0][0] == "uploads-bucket"
+
+
+# ---- validate_input: bucket_profile ----
+
+def test_bucket_profile_absent_is_none():
+    data, err = inputs.validate_input(_valid_base())
+    assert err is None
+    assert data["bucket_profile"] is None
+
+
+def test_bucket_profile_is_trimmed_and_passed_through():
+    data, err = inputs.validate_input(_valid_base(bucket_profile="  pd-qa "))
+    assert err is None
+    assert data["bucket_profile"] == "pd-qa"
+
+
+def test_bucket_profile_rejects_non_string_or_blank():
+    _expect_error(_valid_base(bucket_profile=""), "'bucket_profile' must be a non-empty string")
+    _expect_error(_valid_base(bucket_profile="   "), "'bucket_profile' must be a non-empty string")
+    _expect_error(_valid_base(bucket_profile=7), "'bucket_profile' must be a non-empty string")
+    _expect_error(_valid_base(bucket_profile={"name": "pd-qa"}), "'bucket_profile' must be a non-empty string")
+
+
+# ---- process_r2_inputs: input bucket comes from the target ----
+
+def test_process_r2_inputs_requires_bucket_target():
+    workflow = {"5": {"class_type": "LoadImage", "inputs": {"image": ""}}}
     try:
-        inputs.process_r2_loras([])
+        inputs.process_r2_inputs(workflow, [{"node_id": "5", "input_field": "image", "r2_key": "users/u1/uploads/x.png"}], None)
+    except ValueError as exc:
+        assert "No input bucket configured" in str(exc)
+    else:
+        raise AssertionError("expected ValueError when the job has no bucket target")
+
+
+def test_process_r2_inputs_downloads_from_target_input_bucket_and_rewrites_workflow():
+    stub = StubS3(payload=b"\x89PNG\r\n\x1a\n" + b"0" * 32)
+    _fake_r2.make_s3_client = lambda target: stub
+    fake_ffmpeg = types.ModuleType("lib.ffmpeg_helpers")
+    fake_ffmpeg.ensure_audio_track = lambda path: None
+    sys.modules["lib.ffmpeg_helpers"] = fake_ffmpeg
+    tmp = tempfile.TemporaryDirectory()
+    prev_dir = inputs.COMFY_INPUT_DIR
+    inputs.COMFY_INPUT_DIR = tmp.name
+    try:
+        workflow = {"5": {"class_type": "LoadImage", "inputs": {"image": ""}}}
+        inputs.process_r2_inputs(
+            workflow,
+            [{"node_id": "5", "input_field": "image", "r2_key": "users/u1/uploads/x.png"}],
+            StubTarget(input_bucket="osg-uploads"),
+        )
+        assert stub.downloads == [("osg-uploads", "users/u1/uploads/x.png", os.path.join(tmp.name, "x.png"))]
+        assert workflow["5"]["inputs"]["image"] == "x.png"
     finally:
-        for k, v in prev.items():
-            if v is not None:
-                os.environ[k] = v
+        inputs.COMFY_INPUT_DIR = prev_dir
+        tmp.cleanup()
 
 
 if __name__ == "__main__":

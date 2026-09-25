@@ -107,18 +107,30 @@ def validate_input(job_input) -> tuple[dict | None, str | None]:
         if "/" in uid:
             return None, "'uid' must not contain '/'"
 
+    # Optional per-job bucket selection (see lib/r2.py). Only the *name* travels
+    # in the job; the endpoint's BUCKET_PROFILES env decides what it maps to.
+    bucket_profile = job_input.get("bucket_profile")
+    if bucket_profile is not None:
+        if not isinstance(bucket_profile, str) or not bucket_profile.strip():
+            return None, "'bucket_profile' must be a non-empty string"
+        bucket_profile = bucket_profile.strip()
+
     return {
         "workflow": workflow,
         "r2_inputs": r2_inputs,
         "images": images,
         "r2_loras": r2_loras,
         "uid": uid,
+        "bucket_profile": bucket_profile,
         "comfy_org_api_key": job_input.get("comfy_org_api_key"),
     }, None
 
 
-def process_r2_inputs(workflow: dict, r2_inputs: list[dict]) -> None:
+def process_r2_inputs(workflow: dict, r2_inputs: list[dict], target) -> None:
     """Download each R2 input into /comfyui/input/ and rewrite the workflow.
+
+    `target` is the job's resolved lib.r2.BucketTarget (None when the endpoint
+    has no R2 configured); inputs come from its input_bucket.
 
     Video inputs whose audio is missing or shorter than the video get repaired
     in place (see ensure_audio_track): a silent stereo track is muxed in, or a
@@ -130,18 +142,18 @@ def process_r2_inputs(workflow: dict, r2_inputs: list[dict]) -> None:
     if not r2_inputs:
         return
 
+    if target is None:
+        raise ValueError(
+            "No input bucket configured. Set R2_INPUT_BUCKET_NAME or R2_BUCKET_NAME."
+        )
+    input_bucket = target.input_bucket
+
     from .r2 import make_s3_client
     from .ffmpeg_helpers import ensure_audio_track
 
     os.makedirs(COMFY_INPUT_DIR, exist_ok=True)
 
-    input_bucket = os.environ.get("R2_INPUT_BUCKET_NAME") or os.environ.get("R2_BUCKET_NAME")
-    if not input_bucket:
-        raise ValueError(
-            "No input bucket configured. Set R2_INPUT_BUCKET_NAME or R2_BUCKET_NAME."
-        )
-
-    s3 = make_s3_client()
+    s3 = make_s3_client(target)
     print(
         f"worker-comfyui - Downloading {len(r2_inputs)} R2 input(s) from '{input_bucket}'...",
         flush=True,
@@ -165,8 +177,11 @@ def process_r2_inputs(workflow: dict, r2_inputs: list[dict]) -> None:
         ensure_audio_track(local_path)
 
 
-def process_r2_loras(r2_loras: list[dict]) -> None:
+def process_r2_loras(r2_loras: list[dict], target) -> None:
     """Download custom (user-uploaded) LoRAs from R2 into ComfyUI's loras dir.
+
+    `target` is the job's resolved lib.r2.BucketTarget (None when the endpoint
+    has no R2 configured); LoRAs come from its input_bucket.
 
     Unlike r2_inputs there is no workflow rewrite: the server already set each
     LoraLoader node's lora_name to the entry's filename; this just guarantees
@@ -184,13 +199,13 @@ def process_r2_loras(r2_loras: list[dict]) -> None:
 
     from .r2 import make_s3_client
 
-    os.makedirs(COMFY_LORA_DIR, exist_ok=True)
-
-    input_bucket = os.environ.get("R2_INPUT_BUCKET_NAME") or os.environ.get("R2_BUCKET_NAME")
-    if not input_bucket:
+    if target is None:
         raise ValueError(
             "No input bucket configured. Set R2_INPUT_BUCKET_NAME or R2_BUCKET_NAME."
         )
+    input_bucket = target.input_bucket
+
+    os.makedirs(COMFY_LORA_DIR, exist_ok=True)
 
     s3 = None
     for entry in r2_loras:
@@ -214,7 +229,7 @@ def process_r2_loras(r2_loras: list[dict]) -> None:
             )
 
         if s3 is None:
-            s3 = make_s3_client()
+            s3 = make_s3_client(target)
         tmp_path = f"{local_path}.part-{uuid.uuid4().hex}"
         print(f"worker-comfyui - LoRA: {key} -> {local_path}", flush=True)
         try:

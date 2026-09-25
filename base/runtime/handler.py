@@ -16,7 +16,7 @@ from lib.config import load_model_config
 from lib.comfy_client import ComfyClient
 from lib.collectors import build_collectors
 from lib.inputs import process_inline_images, process_r2_inputs, process_r2_loras, validate_input
-from lib.r2 import make_uploader
+from lib.r2 import load_bucket_profiles, make_uploader, resolve_bucket_target
 
 import requests
 import runpod
@@ -28,6 +28,14 @@ from network_volume import is_network_volume_debug_enabled, run_network_volume_d
 # Module-load-time config + collectors (fail-fast on bad model.yaml)
 MODEL_CFG = load_model_config()
 COLLECTORS = build_collectors(MODEL_CFG.output)
+
+# Fail fast on a malformed BUCKET_PROFILES too: a typo must never let jobs run
+# and then route media to the wrong bucket (or nowhere).
+try:
+    BUCKET_PROFILE_NAMES = sorted(load_bucket_profiles())
+except ValueError as exc:
+    print(f"FATAL: {exc}", file=sys.stderr)
+    sys.exit(1)
 
 # WebSocket trace toggle
 if os.environ.get("WEBSOCKET_TRACE", "false").lower() == "true":
@@ -54,12 +62,25 @@ def handler(job):
     uid = validated.get("uid")
     comfy_org_api_key = validated.get("comfy_org_api_key")
 
+    # Resolve where this job's media lives BEFORE touching ComfyUI: an unknown
+    # or misconfigured bucket profile fails the job with no GPU time spent.
+    try:
+        bucket_target = resolve_bucket_target(validated.get("bucket_profile"))
+    except ValueError as exc:
+        print(f"worker-comfyui - Bucket target rejected: {exc}", flush=True)
+        return {"error": str(exc)}
+    print(
+        "worker-comfyui - Media target: "
+        + (bucket_target.describe() if bucket_target else "base64 response (no R2 configured)"),
+        flush=True,
+    )
+
     client = ComfyClient()
     if not client.check_server():
         return {"error": f"ComfyUI server ({client.host}) not reachable after retries."}
 
     try:
-        process_r2_inputs(workflow, r2_inputs)
+        process_r2_inputs(workflow, r2_inputs, bucket_target)
     except Exception as exc:
         print(f"worker-comfyui - R2 input download failed: {exc}", flush=True)
         traceback.print_exc()
@@ -75,16 +96,17 @@ def handler(job):
     # Custom LoRAs must be on disk (cache hit or fresh download) BEFORE the
     # workflow is queued — LoraLoader nodes resolve lora_name at queue time.
     try:
-        process_r2_loras(r2_loras)
+        process_r2_loras(r2_loras, bucket_target)
     except Exception as exc:
         print(f"worker-comfyui - LoRA download failed: {exc}", flush=True)
         traceback.print_exc()
         return {"error": f"Failed to download LoRA: {exc}"}
 
     try:
-        uploader = make_uploader()
-    except ValueError as exc:
-        return {"error": str(exc)}
+        uploader = make_uploader(bucket_target)
+    except Exception as exc:  # noqa: BLE001 — boto3 client construction
+        traceback.print_exc()
+        return {"error": f"Failed to initialise R2 upload client: {exc}"}
 
     client_id = str(uuid.uuid4())
 
@@ -146,7 +168,9 @@ def handler(job):
 if __name__ == "__main__":
     print(
         f"worker-comfyui - Starting handler for model={MODEL_CFG.name}, "
-        f"output.type={MODEL_CFG.output.type}",
+        f"output.type={MODEL_CFG.output.type}, "
+        f"default_bucket={os.environ.get('R2_BUCKET_NAME') or '(base64 mode)'}, "
+        f"bucket_profiles={BUCKET_PROFILE_NAMES or '(none)'}",
         flush=True,
     )
     runpod.serverless.start({"handler": handler, "refresh_worker": REFRESH_WORKER})

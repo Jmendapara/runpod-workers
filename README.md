@@ -222,6 +222,43 @@ R2 upload (optional — unset for base64 responses):
 - `BUCKET_SECRET_ACCESS_KEY`
 - `R2_BUCKET_NAME`
 - `R2_INPUT_BUCKET_NAME` (optional; defaults to `R2_BUCKET_NAME`)
+- `BUCKET_PROFILES` (optional) — lets ONE endpoint serve several apps / environments,
+  see below.
+
+### One endpoint, several apps: `BUCKET_PROFILES` + `bucket_profile`
+
+The only per-app / per-environment thing in a worker's env is where media goes.
+Instead of one endpoint per (app × env × model), an endpoint can carry a JSON
+allowlist of named bucket targets and let each job pick one by name:
+
+```json
+{
+  "pd-qa":   { "bucket": "pd-qa-media" },
+  "pd-prod": { "bucket": "pd-prod-media" },
+  "osg-dev": { "bucket": "osg-media-dev", "input_bucket": "osg-uploads-dev",
+               "access_key_id": "…", "secret_access_key": "…" }
+}
+```
+
+- Set the JSON (minified is fine) as the `BUCKET_PROFILES` env on the endpoint.
+  Per profile: `bucket` (required), `input_bucket` (default: `bucket`),
+  `endpoint_url` / `access_key_id` / `secret_access_key` (default: the endpoint's
+  `BUCKET_*` env — set both keys or neither; one R2 API token scoped to all the
+  buckets is the simplest setup).
+- The job input carries `"bucket_profile": "pd-qa"`. Outputs upload to that
+  profile's `bucket`, `r2_inputs` / `r2_loras` download from its `input_bucket`.
+- No `bucket_profile` in the job → the endpoint's `R2_BUCKET_NAME` env, exactly as
+  before (so existing callers keep working while endpoints are migrated).
+- Unknown profile → the job fails immediately with `Unknown bucket_profile '…'`
+  (no ComfyUI / GPU time). Malformed `BUCKET_PROFILES` → the worker refuses to
+  boot (`FATAL: BUCKET_PROFILES …` in the logs, like a bad model.yaml).
+- Only list the buckets an endpoint should be able to write to: a dev/QA endpoint
+  must not carry a prod profile.
+
+The handler logs `Media target: profile 'pd-qa': bucket=… input_bucket=…` per job
+and the configured profile names at startup — never the credentials.
+
+Unit tests: `python3 tests/test_bucket_profiles.py` and `python3 tests/test_inputs.py`.
 
 Worker tuning:
 - `REFRESH_WORKER=true` to recycle the worker after each job

@@ -193,6 +193,11 @@ FROM jmendapara/runpod-worker-base:${BASE_VERSION}
 # The checkout's build-time runtime script overrides the copy baked into the
 # base image, so downloader fixes ship with a model build (no base rebuild).
 COPY .worker-runtime/apply_model_config.py /opt/worker/apply_model_config.py
+# The handler + lib ship from the branch being built (overlaying the base's copy),
+# so handler changes roll out per model image without a base rebuild.
+COPY .worker-runtime/lib /opt/worker/lib
+COPY .worker-runtime/handler.py /handler.py
+COPY .worker-runtime/network_volume.py /network_volume.py
 
 COPY model.yaml /etc/worker/model.yaml
 COPY . /tmp/model-ctx/
@@ -327,14 +332,18 @@ build_model() {
     shards="$(render_model_dockerfile "${model_dir}" "${dockerfile}")"
     echo "       Generated sharded Dockerfile: ${shards} weight layer(s) → ${dockerfile}"
 
-    # Stage the build context: the model dir plus the checkout's runtime script
-    # (see the COPY .worker-runtime/... line in the generated Dockerfile).
+    # Stage the build context: the model dir plus the checkout's runtime
+    # (apply_model_config.py, handler.py, network_volume.py and lib/ — see the
+    # COPY .worker-runtime/... lines in the generated Dockerfile).
     local context
     context="$(mktemp -d "/tmp/context.${model}.XXXXXX")"
     cp -R "${model_dir}/." "${context}/"
     mkdir -p "${context}/.worker-runtime"
-    cp base/runtime/apply_model_config.py "${context}/.worker-runtime/"
+    cp base/runtime/apply_model_config.py base/runtime/handler.py base/runtime/network_volume.py \
+        "${context}/.worker-runtime/"
     chmod +x "${context}/.worker-runtime/apply_model_config.py"
+    cp -R base/lib "${context}/.worker-runtime/lib"
+    find "${context}/.worker-runtime/lib" -name '__pycache__' -type d -prune -exec rm -rf {} +
 
     echo "[4/5] Building model → ${tag}"
     export DOCKER_BUILDKIT=1
