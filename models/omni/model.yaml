@@ -1,6 +1,8 @@
 name: omni
 custom_nodes:
-  - repo: https://github.com/Saganaki22/ComfyUI-OmniVoice-TTS
+  # The original Saganaki22/ComfyUI-OmniVoice-TTS repo disappeared from GitHub (404 on
+  # 2026-09-25); this mirror carries the exact pinned commit, so the checkout is byte-identical.
+  - repo: https://github.com/SveSop/ComfyUI-omnivoice-tts
     # Pinned to the commit the validated 2026-07 build used (HEAD has not moved
     # since 2026-06-11). Unpinned custom nodes are a quality lottery — see the
     # hunyuan-instruct-nf4 regression. Re-verify voice output before bumping.
