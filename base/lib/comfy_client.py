@@ -17,8 +17,12 @@ import websocket
 
 
 COMFY_HOST = os.environ.get("COMFY_HOST", "127.0.0.1:8188")
-COMFY_API_AVAILABLE_INTERVAL_MS = 50
-COMFY_API_AVAILABLE_MAX_RETRIES = 500
+# How long a job waits for ComfyUI to answer before failing with "not reachable". A cold
+# worker starts the handler and ComfyUI side by side; big images (custom nodes, comfy-kitchen)
+# need well over the old 25 s to come up, so the default is now 4 minutes. Override per
+# endpoint with COMFY_API_AVAILABLE_MAX_RETRIES / COMFY_API_AVAILABLE_INTERVAL_MS.
+COMFY_API_AVAILABLE_INTERVAL_MS = int(os.environ.get("COMFY_API_AVAILABLE_INTERVAL_MS", 100))
+COMFY_API_AVAILABLE_MAX_RETRIES = int(os.environ.get("COMFY_API_AVAILABLE_MAX_RETRIES", 2400))
 WEBSOCKET_RECONNECT_ATTEMPTS = int(os.environ.get("WEBSOCKET_RECONNECT_ATTEMPTS", 5))
 WEBSOCKET_RECONNECT_DELAY_S = int(os.environ.get("WEBSOCKET_RECONNECT_DELAY_S", 3))
 
