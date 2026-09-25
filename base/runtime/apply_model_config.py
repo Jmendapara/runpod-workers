@@ -40,12 +40,23 @@ WORKER_ENV_FILE = Path("/etc/worker/env")
 PIP = "/opt/venv/bin/pip"
 
 
+def _redacted(cmd: list[str]) -> str:
+    """Shell-quoted command line with secret header values masked (build logs are
+    persisted on the build box and streamed to laptops — never echo tokens)."""
+    out = []
+    for c in cmd:
+        if c.lower().startswith("authorization:"):
+            c = "Authorization: ***"
+        out.append(shlex.quote(c))
+    return " ".join(out)
+
+
 def run(cmd: list[str], cwd: str | None = None) -> None:
     """Run a command, stream output, fail loud on non-zero exit."""
-    print(f"+ {' '.join(shlex.quote(c) for c in cmd)}", flush=True)
+    print(f"+ {_redacted(cmd)}", flush=True)
     result = subprocess.run(cmd, cwd=cwd, check=False)
     if result.returncode != 0:
-        print(f"FATAL: command failed (exit {result.returncode}): {' '.join(cmd)}", file=sys.stderr)
+        print(f"FATAL: command failed (exit {result.returncode}): {_redacted(cmd)}", file=sys.stderr)
         sys.exit(result.returncode)
 
 
