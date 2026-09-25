@@ -32,5 +32,15 @@ model_downloads:
     filename: vae/qwen_image_2.1_vae_bf16.safetensors
     dest: /comfyui/models/vae/
 
+  # ---------- LoRAs (server-selectable / auto-applied; pixel-dream QWEN_IMAGE_2_1_LORA_MAP) ----------
+  # NSFW LORA | Qwen Image 2.1 v2.0 by TheseAlpacas — civitai model 2958918 / version 3357315
+  # (76 MB). Author guidance: strength 0.8, 25+ steps, cfg 3-5, sampler er_sde, scheduler beta,
+  # the int8_convrot encoders above. Canonical file has spaces → renamed via filename:.
+  - source: url
+    url: https://civitai.com/api/download/models/3357315
+    filename: NSFW_Qwen_TheseAlpacas_V2.safetensors
+    dest: /comfyui/models/loras/
+    auth_header_env: CIVITAI_TOKEN
+
 output:
   type: image
