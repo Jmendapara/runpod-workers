@@ -198,6 +198,7 @@ COPY .worker-runtime/apply_model_config.py /opt/worker/apply_model_config.py
 COPY .worker-runtime/lib /opt/worker/lib
 COPY .worker-runtime/handler.py /handler.py
 COPY .worker-runtime/network_volume.py /network_volume.py
+COPY .worker-runtime/start.sh /start.sh
 
 COPY model.yaml /etc/worker/model.yaml
 COPY . /tmp/model-ctx/
@@ -340,7 +341,8 @@ build_model() {
     cp -R "${model_dir}/." "${context}/"
     mkdir -p "${context}/.worker-runtime"
     cp base/runtime/apply_model_config.py base/runtime/handler.py base/runtime/network_volume.py \
-        "${context}/.worker-runtime/"
+        base/runtime/start.sh "${context}/.worker-runtime/"
+    chmod +x "${context}/.worker-runtime/start.sh"
     chmod +x "${context}/.worker-runtime/apply_model_config.py"
     cp -R base/lib "${context}/.worker-runtime/lib"
     find "${context}/.worker-runtime/lib" -name '__pycache__' -type d -prune -exec rm -rf {} +
