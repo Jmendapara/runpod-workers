@@ -95,6 +95,15 @@ COMFY_LOOP_PID=$!
 echo "worker-comfyui: ComfyUI restart loop PID=${COMFY_LOOP_PID}, log=${COMFY_LOG}"
 
 echo "worker-comfyui: Starting RunPod Handler"
+# Do not accept jobs until ComfyUI answers (up to COMFY_READY_TIMEOUT_S, default 300 s):
+# RunPod routes work as soon as the handler process is up, and a cold worker's ComfyUI can
+# take minutes to import its custom nodes.
+ready_timeout="${COMFY_READY_TIMEOUT_S:-300}"; waited=0
+until curl -sf "http://127.0.0.1:8188/system_stats" >/dev/null 2>&1; do
+if [ "$waited" -ge "$ready_timeout" ]; then echo "worker-comfyui - WARNING: ComfyUI not ready after ${ready_timeout}s, starting handler anyway"; break; fi
+sleep 2; waited=$((waited+2))
+done
+echo "worker-comfyui - ComfyUI ready after ${waited}s"
 if [ "${SERVE_API_LOCALLY:-}" = "true" ]; then
     python -u /handler.py --rp_serve_api --rp_api_host=0.0.0.0
 else
