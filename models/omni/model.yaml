@@ -8,14 +8,17 @@ custom_nodes:
     # hunyuan-instruct-nf4 regression. Re-verify voice output before bumping.
     ref: 3fe8e42a6d4a03628471aa1ba8506657e2e96dea
     pip_install_requirements: false
+    # omnivoice + librosa pinned to the versions in the deployed July image
+    # (jmendapara/omni-runpod-worker:2026-07-04-1835-62724dd): an unpinned 2026-09-25 rebuild
+    # pulled omnivoice 0.2.1, which rejects any voice-design text outside its tag list.
     extra_pip:
-      - "omnivoice --no-deps"
+      - "omnivoice==0.1.5 --no-deps"
+      - "librosa==0.11.0"
       - accelerate
       - pydub
       - soundfile
       - scipy
       - lazy_loader
-      - librosa
       - sentencepiece
       - jieba
       - soxr
