@@ -108,5 +108,13 @@ model_downloads:
     dest: /comfyui/models/loras/
     auth_header_env: CIVITAI_TOKEN
 
+  # Aesthetic Amateur Photo — Z-Image V2 by powerpuff (model 689192 / version 2512057). No trigger word;
+  # author: stronger effect than V1, can be used at higher strength.
+  - source: url
+    url: https://civitai.com/api/download/models/2512057
+    filename: aestheticphotoz4.safetensors
+    dest: /comfyui/models/loras/
+    auth_header_env: CIVITAI_TOKEN
+
 output:
   type: image
