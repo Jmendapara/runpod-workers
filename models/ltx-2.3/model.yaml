@@ -2,6 +2,12 @@ name: ltx-2.3
 
 custom_nodes:
   - repo: https://github.com/Lightricks/ComfyUI-LTXVideo
+    # PINNED (2026-09-26): commit 63a7f34 (2026-09-17) removed the pack's own LTXVAddLatentGuide in favour of
+    # the core node (Comfy-Org/ComfyUI#16176), which ComfyUI 0.27.0 (the July base this image runs) does not
+    # have — an unpinned rebuild on 2026-09-25 silently lost the node and every OSG "extend video" job failed
+    # with "Node 'LTXV Add Latent Guide' not found". aceeae9 (2026-06-30) is the commit the working July
+    # images were built from. Re-evaluate the pin only together with a ComfyUI base bump.
+    ref: aceeae9635f6d493f2893ba3c411a1c36031788a
     # kornia >= 0.8 removed the `pad` symbol from kornia.geometry.transform.pyramid;
     # ComfyUI-LTXVideo/pyramid_blending.py still imports it, so the whole package
     # fails to load and all of its nodes (LTXVAddLatentGuide, LTXVCropGuides, etc.)
