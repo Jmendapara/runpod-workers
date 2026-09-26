@@ -51,5 +51,13 @@ model_downloads:
     dest: /comfyui/models/loras/
     auth_header_env: CIVITAI_TOKEN
 
+  # NiceGirls UltraReal v2 Qwen2.1 by Danrisi — civitai model 1862761 / version 3352079 (76 MB).
+  # Realism/faces LoRA, no trigger word; author: blends with Lenovo + NSFW LoRAs (~0.6-0.8 when stacked).
+  - source: url
+    url: https://civitai.com/api/download/models/3352079
+    filename: nicegirls_v2_qwen21.safetensors
+    dest: /comfyui/models/loras/
+    auth_header_env: CIVITAI_TOKEN
+
 output:
   type: image
