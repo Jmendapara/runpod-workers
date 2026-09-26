@@ -2,7 +2,7 @@ name: krea-2-turbo
 
 # Krea 2 OSS Turbo (FP8) text-to-image. CLIPLoader(type=krea2) + UNETLoader are CORE
 # ComfyUI nodes — REQUIRES a base image built with ComfyUI >= 0.25.0 (built-in Krea2
-# support). One custom_node (ConditioningKrea2Rebalance) + seven baked LoRAs. All three weights
+# support). One custom_node (ConditioningKrea2Rebalance) + eight baked LoRAs. All three weights
 # are public (no HF token).
 
 custom_nodes:
@@ -80,6 +80,13 @@ model_downloads:
   - source: url
     url: https://civitai.com/api/download/models/3116962
     filename: Krea_2_zidiusArt_Melancholy_v2.safetensors
+    dest: /comfyui/models/loras/
+    auth_header_env: CIVITAI_TOKEN
+
+  # Aesthetic Amateur Photo — Krea V4 by powerpuff (model 689192 / version 3284331). No trigger word.
+  - source: url
+    url: https://civitai.com/api/download/models/3284331
+    filename: Krea_Amateur_V4.safetensors
     dest: /comfyui/models/loras/
     auth_header_env: CIVITAI_TOKEN
 
