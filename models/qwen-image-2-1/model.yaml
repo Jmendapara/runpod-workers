@@ -42,5 +42,14 @@ model_downloads:
     dest: /comfyui/models/loras/
     auth_header_env: CIVITAI_TOKEN
 
+  # Lenovo UltraReal v1.0 Qwen2.1 by Danrisi — civitai model 1662740 / version 3349565 (76 MB).
+  # Realism LoRA, no trigger word. Author guidance (Qwen 2.1): cfg 3-4, beta scheduler,
+  # res_multistep / res_2m / res_2s; stacks with NSFW LoRAs.
+  - source: url
+    url: https://civitai.com/api/download/models/3349565
+    filename: lenovo_qwen21.safetensors
+    dest: /comfyui/models/loras/
+    auth_header_env: CIVITAI_TOKEN
+
 output:
   type: image
