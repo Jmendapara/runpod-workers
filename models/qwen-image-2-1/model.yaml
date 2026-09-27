@@ -59,5 +59,14 @@ model_downloads:
     dest: /comfyui/models/loras/
     auth_header_env: CIVITAI_TOKEN
 
+  # SamsungCam UltraReal v1.0 Qwen2.1 by Danrisi — civitai model 1551668 / version 3354434 (76 MB).
+  # Samsung S-series phone-photo realism, no trigger word; retrained on S25 Ultra photos for 2.1.
+  # Author: 0.7 strength (0.7-1.0 depending on artifacts); stacks with NiceGirls + NSFW LoRAs.
+  - source: url
+    url: https://civitai.com/api/download/models/3354434
+    filename: samsung_qwen21.safetensors
+    dest: /comfyui/models/loras/
+    auth_header_env: CIVITAI_TOKEN
+
 output:
   type: image
