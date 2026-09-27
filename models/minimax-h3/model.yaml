@@ -120,5 +120,35 @@ model_downloads:
     dest: /comfyui/models/loras/
     auth_header_env: CIVITAI_TOKEN
 
+  # The next three are rank 16/32 exports on the blocks' attn qkv/out + mlp and the token
+  # refiner; every target tensor matches fl2va AND ref2va (header check 2026-09-27).
+
+  # HMMisDog v1.5 (HearmemanAI) — https://civitai.com/models/2924146
+  # (model 2924146 / version 3356770). Male-POV missionary / doggy. Rank 32 (fp16, 296 MB).
+  # No trigger word, no strength guidance.
+  - source: url
+    url: https://civitai.com/api/download/models/3356770
+    filename: HMMisDogV1.5.safetensors
+    dest: /comfyui/models/loras/
+    auth_header_env: CIVITAI_TOKEN
+
+  # Fingering Pussy v1.1_H3 (Generation3dX) — https://civitai.com/models/2007360
+  # (model 2007360 / version 3342542). Rank 16 (bf16, 148 MB). No trigger word; the author
+  # tested everything at 0.8, frontal view of a woman lying on her back.
+  - source: url
+    url: https://civitai.com/api/download/models/3342542
+    filename: h3_base_fingering_v1.1-6000.safetensors
+    dest: /comfyui/models/loras/
+    auth_header_env: CIVITAI_TOKEN
+
+  # Blowjob Minimax H3 v3 (kermitfrog1202) — https://civitai.com/models/2845331
+  # (model 2845331 / version 3285598). Rank 32 with alphas (bf16, 296 MB). Trigger bl0w_j0b,
+  # strength 1.0. Canonical file name has spaces → renamed via filename:.
+  - source: url
+    url: https://civitai.com/api/download/models/3285598
+    filename: MM-H3_Blowjob_v3.safetensors
+    dest: /comfyui/models/loras/
+    auth_header_env: CIVITAI_TOKEN
+
 output:
   type: video   # SaveVideo emits under ComfyUI's "videos" history key
