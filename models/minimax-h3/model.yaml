@@ -34,6 +34,13 @@ name: minimax-h3
 # of locally generated outputs requires a MiniMax commercial license (sold via
 # Comfy). Operator's responsibility.
 
+# Output frame rate (pixel-dream settings.fps 24/30/50/60): the model always renders 24 fps;
+# higher rates run core FrameInterpolate (RIFE v4.26, x5 -> 120 fps, ComfyUI >= 0.20) and then
+# VHS_SelectImages picks the target-rate frames from a server-computed index list before CreateVideo.
+custom_nodes:
+  - repo: https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite # VHS_SelectImages (frame-rate resample)
+    ref: 4d907bee61e92c2e65af3bd6383a4e4d356126d1                   # 2026-09-02
+
 model_downloads:
   # All files are public on Hugging Face — no HUGGINGFACE_ACCESS_TOKEN required.
   # apply_model_config.py flattens each `filename` to its basename on download;
@@ -159,6 +166,12 @@ model_downloads:
     filename: SteepSlopeTiddies_XXL_MH3.safetensors
     dest: /comfyui/models/loras/
     auth_header_env: CIVITAI_TOKEN
+
+  # RIFE v4.26 frame interpolation model (22.7 MB, public) for core FrameInterpolationModelLoader.
+  - source: hf
+    repo_id: Comfy-Org/frame_interpolation
+    filename: frame_interpolation/rife_v4.26.safetensors
+    dest: /comfyui/models/frame_interpolation/
 
 output:
   type: video   # SaveVideo emits under ComfyUI's "videos" history key
