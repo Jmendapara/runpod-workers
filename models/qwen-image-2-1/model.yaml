@@ -68,5 +68,23 @@ model_downloads:
     dest: /comfyui/models/loras/
     auth_header_env: CIVITAI_TOKEN
 
+  # Qwen 2.1 Vagina v1.0 by herpderpmerp — civitai model 2960871 / version 3354330 (76 MB, rank 16,
+  # ai-toolkit). Female genital anatomy; no trigger word, no strength guidance. Canonical file is a
+  # training-step name (qwen21_v2_000002750) → renamed via filename:.
+  - source: url
+    url: https://civitai.com/api/download/models/3354330
+    filename: qwen21_vagina_v1.safetensors
+    dest: /comfyui/models/loras/
+    auth_header_env: CIVITAI_TOKEN
+
+  # Qwen Image 2.1 Anime2Real-Semi Beta v1.0 by arpalest — civitai model 2960136 / version 3353415
+  # (152 MB, rank 32). IMAGE-EDIT LoRA: turns an anime character into a (semi-)realistic person.
+  # Trigger "Convert to realistic style", weight 0.9; trained 1:1. Canonical file has a space → renamed.
+  - source: url
+    url: https://civitai.com/api/download/models/3353415
+    filename: qwen21_anime2real_semi_beta.safetensors
+    dest: /comfyui/models/loras/
+    auth_header_env: CIVITAI_TOKEN
+
 output:
   type: image
