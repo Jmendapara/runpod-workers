@@ -150,5 +150,15 @@ model_downloads:
     dest: /comfyui/models/loras/
     auth_header_env: CIVITAI_TOKEN
 
+  # Ski Slope Breasts — Steep Slope XXL MH3 (TeeKay) — https://civitai.com/models/942483
+  # (model 942483 / version 3345150). Paid early access on Civitai: the CIVITAI_TOKEN account
+  # must own it or the download 403s ("Early Access"). Rank 32 (bf16, 296 MB), same layers as
+  # above. Trigger SteepSlopeTiddies; author used 1.10. Long canonical name → renamed.
+  - source: url
+    url: https://civitai.com/api/download/models/3345150
+    filename: SteepSlopeTiddies_XXL_MH3.safetensors
+    dest: /comfyui/models/loras/
+    auth_header_env: CIVITAI_TOKEN
+
 output:
   type: video   # SaveVideo emits under ComfyUI's "videos" history key
