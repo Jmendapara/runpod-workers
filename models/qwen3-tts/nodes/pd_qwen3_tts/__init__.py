@@ -15,6 +15,7 @@ HF_HUB_OFFLINE=1). Models load lazily on first use and stay resident.
 import hashlib
 import os
 import random
+import re
 import threading
 import time
 import wave
@@ -156,6 +157,41 @@ class PDQwen3TTSVoiceDesign:
         return (_to_audio(wavs, sr),)
 
 
+_SENTENCE_END = re.compile(r"(?<=[.!?…])\s+")
+
+
+def _chunks(text, target_chars):
+    """Split text at sentence ends into groups of about target_chars (one group when short)."""
+    text = " ".join(str(text).split())
+    if target_chars <= 0 or len(text) <= target_chars * 1.3:
+        return [text]
+    out, cur = [], ""
+    for sentence in _SENTENCE_END.split(text):
+        if cur and len(cur) + 1 + len(sentence) > target_chars:
+            out.append(cur)
+            cur = sentence
+        else:
+            cur = f"{cur} {sentence}".strip()
+    if cur:
+        out.append(cur)
+    return out
+
+
+def _join(wavs, sr, pause_s=0.22):
+    """Concatenate chunks with a short breath of silence (trailing silence of each chunk trimmed)."""
+    gap = np.zeros(int(sr * pause_s), dtype=np.float32)
+    parts = []
+    for i, w in enumerate(wavs):
+        w = np.asarray(w, dtype=np.float32).reshape(-1)
+        nz = np.flatnonzero(np.abs(w) > 1e-3)
+        if nz.size:
+            w = w[: nz[-1] + int(sr * 0.05)]
+        if i:
+            parts.append(gap)
+        parts.append(w)
+    return np.concatenate(parts) if parts else np.zeros(1, dtype=np.float32)
+
+
 def _clone_prompt(model, kind, wav, sr, ref_text, x_vector_only):
     h = hashlib.sha1()
     h.update(kind.encode())
@@ -195,10 +231,14 @@ class PDQwen3TTSVoiceClone:
         }, "optional": {
             "model_size": (list(CLONE_SIZES.keys()), {"default": "1.7B"}),
             "non_streaming": ("BOOLEAN", {"default": True}),
+            # > 0: long text is split at sentence ends into groups of about this many characters,
+            # generated as ONE batch (same reference, same seed) and joined — a long voice note
+            # takes about as long as its longest group.
+            "chunk_chars": ("INT", {"default": 0, "min": 0, "max": 2000}),
         }}
 
     def run(self, ref_audio, ref_text, text, language, x_vector_only, seed, temperature, top_p, top_k,
-            repetition_penalty, max_new_tokens, model_size="1.7B", non_streaming=True):
+            repetition_penalty, max_new_tokens, model_size="1.7B", non_streaming=True, chunk_chars=0):
         if not str(text).strip():
             raise ValueError("text is empty")
         ref_text = str(ref_text or "").strip()
@@ -212,14 +252,19 @@ class PDQwen3TTSVoiceClone:
         with torch.inference_mode():
             prompt, cached = _clone_prompt(model, kind, wav, sr, ref_text, x_vector_only)
             t1 = time.time()
+            parts = _chunks(text, int(chunk_chars or 0))
             _seed_everything(seed)
             wavs, out_sr = model.generate_voice_clone(
-                text=str(text), language=language, voice_clone_prompt=prompt,
+                text=parts if len(parts) > 1 else parts[0],
+                language=[language] * len(parts) if len(parts) > 1 else language,
+                voice_clone_prompt=list(prompt) * len(parts) if len(parts) > 1 else prompt,
                 non_streaming_mode=bool(non_streaming),
                 **_gen_kwargs(temperature, top_p, top_k, repetition_penalty, max_new_tokens))
+            if len(parts) > 1:
+                wavs = [_join(wavs, out_sr)]
         t2 = time.time()
         secs = len(np.asarray(wavs[0]).reshape(-1)) / float(out_sr or 1)
-        print(f"[PDQwen3TTS] clone {model_size}: prompt {'cached' if cached else f'{t1 - t0:.1f}s'}, "
+        print(f"[PDQwen3TTS] clone {model_size} x{len(parts)}: prompt {'cached' if cached else f'{t1 - t0:.1f}s'}, "
               f"speech {secs:.1f}s in {t2 - t1:.1f}s (RTF {(t2 - t1) / max(secs, 0.1):.2f})", flush=True)
         return (_to_audio(wavs, out_sr),)
 
