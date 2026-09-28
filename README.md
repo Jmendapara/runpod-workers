@@ -137,6 +137,7 @@ curl -fsSL .../build.sh | CUDA_BASE_IMAGE=nvidia/cuda:12.8.1-cudnn-runtime-ubunt
 |---|---|---|
 | `qwen-image-2-1` | cu130 base `2026-09-22-0516-9e98cc5` or later | Needs ComfyUI >= 0.37.0 (`TextEncodeQwenImage21` / `QwenImage21Cache`, released 2026-09-21). int8_convrot weights need CUDA 13 for the comfy-kitchen kernels; on cu128 they hit the slow dequant fallback |
 | `minimax-h3` | cu130 base built from a Dockerfile that installs `gcc` + `libc6-dev` (2026-09-22 or later) | Needs ComfyUI >= 0.30.0. Triton JIT-compiles kernel launchers at runtime; without a C compiler the MiniMax node fails with "Failed to find C compiler" |
+| `qwen3-tts` | cu130 base `2026-09-22-0516-9e98cc5` or later | Own node pack (`models/qwen3-tts/nodes/pd_qwen3_tts`, installed by `install_nodes.py`) over `qwen-tts==0.1.1` installed `--no-deps` (its pins would re-resolve torch/gradio); `transformers==4.57.3`. Weights offline (`HF_HUB_OFFLINE=1`) |
 | `scail-2` | **pin `BASE_TAG=2026-07-07-1526-510c57c`** until validated on cu130 | `extra_pip: cupy-cuda12x` → needs `cupy-cuda13x` on a cu130 base |
 | `wan-animate` | **pin `BASE_TAG=2026-07-07-1526-510c57c`** until validated on cu130 | `onnxruntime-gpu` is pinned for CUDA 12.8 (commit 17d0400); needs a CUDA 13 build |
 | `ltx-2.3` | **pin `BASE_TAG=2026-07-07-1526-510c57c`** until validated on cu130 | `pip_extras: sageattention` untested against torch cu130 |
@@ -197,6 +198,19 @@ nvfp4 text encoder, both VAEs, both turbo LoRAs). Suggested RunPod serverless se
 - License: MiniMax H3 weights are under the minimax-h3-community-license-agreement;
   Comfy states commercial use of locally generated outputs needs a MiniMax
   commercial license (sold via Comfy).
+
+## qwen3-tts endpoint sizing
+
+- Qwen3-TTS 1.7B Base (voice clone) + 1.7B VoiceDesign, ~9 GB of weights, ~8 GB VRAM in bf16
+  with both loaded: the 24 GB pool (`ADA_24` / `AMPERE_24`) is plenty; 40 GB disk.
+- Pixel Dream companion voice notes: VoiceDesign renders each companion's reference clip once
+  (build time / custom companion creation); every voice note is Base cloning that clip + its
+  exact transcript (`ref_text`), so she always has the same voice. Output: 24 kHz mono 16-bit
+  WAV (`PDSaveWav`, output type `audio`, no FLAC transcode).
+- Workers 0 → 2, idle timeout 60 s; a warm note (~15 s of speech) takes a few seconds, a cold
+  start adds the image pull + ~20 s model load.
+- License: Qwen3-TTS weights are Apache-2.0.
+- Smoke: `python tests/run_smoke.py qwen3-tts <endpoint-id>` (voice design → WAV).
 
 ## qwen-image-2-1 endpoint sizing
 

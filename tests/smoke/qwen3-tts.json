@@ -1,0 +1,23 @@
+{
+  "_NOTE": "Voice design smoke: an adult woman's voice from a text description, saved as 24 kHz mono WAV by PDSaveWav. The clone graph (LoadAudio via r2_inputs -> PDQwen3TTSVoiceClone) is built in pixel-dream server/models/qwen3-tts.js.",
+  "workflow": {
+    "1": {
+      "class_type": "PDQwen3TTSVoiceDesign",
+      "inputs": {
+        "text": "Hey you. I was just thinking about you, so I figured I'd send you a little voice note. Call me later, okay?",
+        "instruct": "A warm, relaxed American woman in her late twenties, soft medium-low pitch, slightly husky, unhurried and playful, speaking close to the phone like a private voice note.",
+        "language": "English",
+        "seed": 1234,
+        "temperature": 0.9,
+        "top_p": 1.0,
+        "top_k": 50,
+        "repetition_penalty": 1.05,
+        "max_new_tokens": 600
+      }
+    },
+    "2": {
+      "class_type": "PDSaveWav",
+      "inputs": { "audio": ["1", 0], "filename_prefix": "PD_voice_smoke" }
+    }
+  }
+}
