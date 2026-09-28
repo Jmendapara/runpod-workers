@@ -12,10 +12,13 @@ Three nodes, kept deliberately small so every knob the app relies on is explicit
 Weights are baked into the image under models/qwen3-tts/<repo name>/ (no runtime download:
 HF_HUB_OFFLINE=1). Models load lazily on first use and stay resident.
 """
+import hashlib
 import os
 import random
 import threading
+import time
 import wave
+from collections import OrderedDict
 
 import numpy as np
 import torch
@@ -25,8 +28,20 @@ import folder_paths
 MODEL_ROOT = os.path.join(folder_paths.models_dir, "qwen3-tts")
 MODEL_DIRS = {
     "base": "Qwen3-TTS-12Hz-1.7B-Base",
+    "base_small": "Qwen3-TTS-12Hz-0.6B-Base",
     "voice_design": "Qwen3-TTS-12Hz-1.7B-VoiceDesign",
 }
+CLONE_SIZES = {"1.7B": "base", "0.6B": "base_small"}
+
+if torch.cuda.is_available():
+    # Faster matmuls on Ampere+ (TF32) — speech quality is unaffected.
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
+
+# Voice clone prompts (the encoded reference clip + transcript) per model: every voice note of a
+# companion clones the SAME clip, so it is encoded once per worker, not once per note.
+_PROMPT_CACHE_MAX = 64
+_prompt_cache = OrderedDict()
 LANGUAGES = ["Auto", "English", "Chinese", "Japanese", "Korean", "German", "French",
              "Russian", "Portuguese", "Spanish", "Italian"]
 # 12 Hz codec: 12 tokens per second of speech. 1500 tokens = 125 s, far above any voice note;
@@ -141,6 +156,28 @@ class PDQwen3TTSVoiceDesign:
         return (_to_audio(wavs, sr),)
 
 
+def _clone_prompt(model, kind, wav, sr, ref_text, x_vector_only):
+    h = hashlib.sha1()
+    h.update(kind.encode())
+    h.update(np.ascontiguousarray(wav, dtype=np.float32).tobytes())
+    h.update(str(sr).encode())
+    h.update((ref_text or "").encode("utf-8"))
+    h.update(b"x" if x_vector_only else b"i")
+    key = h.hexdigest()
+    with _lock:
+        hit = _prompt_cache.get(key)
+        if hit is not None:
+            _prompt_cache.move_to_end(key)
+            return hit, True
+    items = model.create_voice_clone_prompt(
+        ref_audio=(wav, sr), ref_text=None if x_vector_only else ref_text, x_vector_only_mode=x_vector_only)
+    with _lock:
+        _prompt_cache[key] = items
+        while len(_prompt_cache) > _PROMPT_CACHE_MAX:
+            _prompt_cache.popitem(last=False)
+    return items, False
+
+
 class PDQwen3TTSVoiceClone:
     CATEGORY = "audio/qwen3-tts"
     RETURN_TYPES = ("AUDIO",)
@@ -155,24 +192,35 @@ class PDQwen3TTSVoiceClone:
             "language": (LANGUAGES, {"default": "English"}),
             "x_vector_only": ("BOOLEAN", {"default": False}),
             **_sampling_inputs(),
+        }, "optional": {
+            "model_size": (list(CLONE_SIZES.keys()), {"default": "1.7B"}),
+            "non_streaming": ("BOOLEAN", {"default": True}),
         }}
 
     def run(self, ref_audio, ref_text, text, language, x_vector_only, seed, temperature, top_p, top_k,
-            repetition_penalty, max_new_tokens):
+            repetition_penalty, max_new_tokens, model_size="1.7B", non_streaming=True):
         if not str(text).strip():
             raise ValueError("text is empty")
         ref_text = str(ref_text or "").strip()
         # ICL cloning needs the reference transcript; without one fall back to the speaker
         # embedding alone (same timbre, slightly less faithful prosody).
         x_vector_only = bool(x_vector_only) or not ref_text
-        model = _load("base")
+        kind = CLONE_SIZES.get(model_size, "base")
+        model = _load(kind)
         wav, sr = _from_audio(ref_audio)
-        _seed_everything(seed)
+        t0 = time.time()
         with torch.inference_mode():
+            prompt, cached = _clone_prompt(model, kind, wav, sr, ref_text, x_vector_only)
+            t1 = time.time()
+            _seed_everything(seed)
             wavs, out_sr = model.generate_voice_clone(
-                text=str(text), language=language, ref_audio=(wav, sr),
-                ref_text=None if x_vector_only else ref_text, x_vector_only_mode=x_vector_only,
+                text=str(text), language=language, voice_clone_prompt=prompt,
+                non_streaming_mode=bool(non_streaming),
                 **_gen_kwargs(temperature, top_p, top_k, repetition_penalty, max_new_tokens))
+        t2 = time.time()
+        secs = len(np.asarray(wavs[0]).reshape(-1)) / float(out_sr or 1)
+        print(f"[PDQwen3TTS] clone {model_size}: prompt {'cached' if cached else f'{t1 - t0:.1f}s'}, "
+              f"speech {secs:.1f}s in {t2 - t1:.1f}s (RTF {(t2 - t1) / max(secs, 0.1):.2f})", flush=True)
         return (_to_audio(wavs, out_sr),)
 
 

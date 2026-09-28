@@ -11,7 +11,7 @@ def main() -> int:
     from qwen_tts import Qwen3TTSModel  # noqa: F401
 
     root = "/comfyui/models/qwen3-tts"
-    for name in ("Qwen3-TTS-12Hz-1.7B-Base", "Qwen3-TTS-12Hz-1.7B-VoiceDesign"):
+    for name in ("Qwen3-TTS-12Hz-1.7B-Base", "Qwen3-TTS-12Hz-0.6B-Base", "Qwen3-TTS-12Hz-1.7B-VoiceDesign"):
         for rel in ("config.json", "model.safetensors", "speech_tokenizer/model.safetensors"):
             p = os.path.join(root, name, rel)
             if not os.path.isfile(p):

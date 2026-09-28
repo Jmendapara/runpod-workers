@@ -20,6 +20,9 @@ model_downloads:
     repo_id: Qwen/Qwen3-TTS-12Hz-1.7B-Base
     dest: /comfyui/models/qwen3-tts/Qwen3-TTS-12Hz-1.7B-Base
   - source: hf-snapshot
+    repo_id: Qwen/Qwen3-TTS-12Hz-0.6B-Base
+    dest: /comfyui/models/qwen3-tts/Qwen3-TTS-12Hz-0.6B-Base
+  - source: hf-snapshot
     repo_id: Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign
     dest: /comfyui/models/qwen3-tts/Qwen3-TTS-12Hz-1.7B-VoiceDesign
 post_install:
