@@ -93,6 +93,14 @@ model_downloads:
     filename: loras/minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16.safetensors
     dest: /comfyui/models/loras/
 
+  # lightx2v turbo LoRA for ref2va, 8-step v1.0 trained at 768p (1344x768, video shift 6 /
+  # audio shift 3 per the model card's 768p rows). Candidate replacement for the 4-step v0.1
+  # (trained at 544p, shift 12) — 2026-09-29 quality investigation. Not on Comfy-Org; lightx2v only.
+  - source: hf
+    repo_id: lightx2v/Minimax-h3-Turbo
+    filename: minimax_h3_ref2v_turbo_8step_v1.0_768p_comfyui_bf16.safetensors
+    dest: /comfyui/models/loras/
+
   # MiniMax H3 NSFW Unlocked (MidLAB) — https://civitai.com/models/2925727
   # (model 2925727 / version 3345855 "M3_V1.1"). Rank-16 LoRA on the 50 blocks'
   # mlp.fc1/fc2 only (fp32, 164 MB). Trained on fl2va (t2v + i2v); fl2va and ref2va
