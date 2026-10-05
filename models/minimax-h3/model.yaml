@@ -175,6 +175,15 @@ model_downloads:
     dest: /comfyui/models/loras/
     auth_header_env: CIVITAI_TOKEN
 
+  # Realism People (fal) — https://huggingface.co/fal/MiniMax-H3-Realism-People-LoRA
+  # (repo sha 039cc85). Rank 32, no alphas (bf16, 131 MB), blocks' attn qkv_proj/out_proj only;
+  # trained on fl2va, every tensor matches fl2va AND ref2va (header check 2026-10-05).
+  # Trigger r34l1sm; author: 1.0 intended, 0.6-0.8 lighter. Public, no token.
+  - source: hf
+    repo_id: fal/MiniMax-H3-Realism-People-LoRA
+    filename: h3-realism-people-t2v-i2v-r2v.safetensors
+    dest: /comfyui/models/loras/
+
   # RIFE v4.26 frame interpolation model (22.7 MB, public) for core FrameInterpolationModelLoader.
   - source: hf
     repo_id: Comfy-Org/frame_interpolation
