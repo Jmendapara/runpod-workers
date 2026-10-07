@@ -86,5 +86,17 @@ model_downloads:
     dest: /comfyui/models/loras/
     auth_header_env: CIVITAI_TOKEN
 
+  # Qwen Image 2.1 Consistency LoRA v1.0 by AusBoss — civitai model 2969143 / version 3364470
+  # (152 MB, rank 32, step 1500). IMAGE-EDIT LoRA: keeps the edit on the original's frame (no
+  # zoom / shift drift, less repaint outside the edited area). No trigger word. Author guidance:
+  # LoraLoaderModelOnly right after the model loader, strength 1.0, 25 steps, cfg 1, euler/simple,
+  # denoise 1, sample on TextEncodeQwenImage21's latent. Off for big removals (ghosting).
+  # Used by fitcheck (TryRack) try-ons.
+  - source: url
+    url: https://civitai.com/api/download/models/3364470
+    filename: qwen-image-2.1-consistency.safetensors
+    dest: /comfyui/models/loras/
+    auth_header_env: CIVITAI_TOKEN
+
 output:
   type: image
