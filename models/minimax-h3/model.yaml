@@ -1,6 +1,7 @@
 name: minimax-h3
-# MiniMax H3 — text-to-video, first/last-frame image-to-video, reference-to-video
-# and multiframe reference (chained MiniMaxH3AddGuide), all with native stereo audio
+# MiniMax H3 — text-to-video, first/last-frame image-to-video, reference-to-video,
+# multiframe reference (chained MiniMaxH3AddGuide) and character swap (ref2va + the Akatz
+# Character Swap LoRA, source clip as a reference video), all with native stereo audio
 # (https://docs.comfy.org/tutorials/video/minimax/minimax-h3).
 #
 # ALL nodes are ComfyUI CORE: MiniMaxH3ImageToVideo (t2va when no first_frame is
@@ -27,7 +28,8 @@ name: minimax-h3
 # when the prompt is sexual enough, + up to 2 user-picked LoRAs); both res_multistep /
 # simple, BasicGuider (no CFG, no negative prompt), 24 fps, 768p canvas (short edge
 # 768, area <= 768*1344, /32), length on the model's 17k+5 frame grid (124 = ~5 s ...
-# 362 = ~15 s).
+# 362 = ~15 s). character-swap: ref2va + Character Swap LoRA @1.0, 20 full steps, length
+# follows the source clip (56 f = ~2.3 s ... 362 f).
 #
 # LICENSE: Comfy-Org/MiniMax-H3 is published under the
 # minimax-h3-community-license-agreement. The Comfy docs state that commercial use
@@ -182,6 +184,18 @@ model_downloads:
   - source: hf
     repo_id: fal/MiniMax-H3-Realism-People-LoRA
     filename: h3-realism-people-t2v-i2v-r2v.safetensors
+    dest: /comfyui/models/loras/
+
+  # Character Swap LoRA v1 (Akatz Labs) — https://huggingface.co/akatz-ai/MiniMax-H3-Character-Swap-LoRA
+  # (repo lastModified 2026-09-27; sha256 4b2a3f42…f79, 155 MB). Rank 16/16 adapter trained on the
+  # ref2va int8 base: replaces the person named in the prompt in <Video 1> with the character in
+  # <Picture 1> (two-character inference tested upstream, not supervised). Drives the apps'
+  # "Character Swap" tool (minimax-h3:character-swap): ref2va + this LoRA @1.0, 20 full steps,
+  # the source clip wired into ref_videos.ref_video_0 via VHS_LoadVideo (force_rate 24). No trigger
+  # word, no turbo LoRA. License: MiniMax H3 Community License (same as the base), not Apache-2.0.
+  - source: hf
+    repo_id: akatz-ai/MiniMax-H3-Character-Swap-LoRA
+    filename: h3_character_swap_pro4500_1000.safetensors
     dest: /comfyui/models/loras/
 
   # RIFE v4.26 frame interpolation model (22.7 MB, public) for core FrameInterpolationModelLoader.
