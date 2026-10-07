@@ -2,7 +2,7 @@
 """POST a smoke-test input to a RunPod serverless endpoint and assert the response shape.
 
 Usage:
-  python tests/run_smoke.py <model-name> <endpoint-id> [--api-key KEY]
+  python tests/run_smoke.py <model-name>[.<variant>] <endpoint-id> [--api-key KEY]
 
 Inputs come from tests/smoke/<model-name>.json. Asserts:
   - HTTP 200, no top-level 'error'
@@ -75,7 +75,9 @@ def run(model: str, endpoint_id: str, api_key: str, timeout_s: int = 600) -> int
     with open(smoke_path) as f:
         payload = json.load(f)
 
-    model_yaml_path = REPO_ROOT / "models" / model / "model.yaml"
+    # "<model>.<variant>" fixtures (e.g. qwen-image-2-1.edit) share the model's yaml.
+    model_dir = model.split(".", 1)[0]
+    model_yaml_path = REPO_ROOT / "models" / model_dir / "model.yaml"
     with open(model_yaml_path) as f:
         cfg = yaml.safe_load(f)
     out_type = cfg["output"]["type"]
