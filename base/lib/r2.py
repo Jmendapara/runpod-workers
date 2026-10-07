@@ -170,12 +170,17 @@ def resolve_bucket_target(profile_name: str | None) -> BucketTarget | None:
 
 def make_s3_client(target: BucketTarget):
     import boto3
+    from botocore.config import Config
 
+    # R2 rejects SigV2 presigned URLs ("SigV2 authorization is not supported");
+    # boto3 falls back to SigV2 for generate_presigned_url against a custom
+    # endpoint unless the signature version is pinned.
     return boto3.client(
         "s3",
         endpoint_url=target.endpoint_url,
         aws_access_key_id=target.access_key_id,
         aws_secret_access_key=target.secret_access_key,
+        config=Config(signature_version="s3v4"),
     )
 
 
