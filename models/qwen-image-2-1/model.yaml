@@ -1,11 +1,23 @@
 name: qwen-image-2-1
 
+custom_nodes:
+  # AusBoss nodes (MIT) — ONLY for the tiled upscale graph: AUSBOSS_NODES_TiledUpscale cuts the
+  # (lanczos-enlarged) picture into ~2 MP tiles (OUTPUT_IS_LIST → the encode/sample/decode chain
+  # runs once per tile) and AUSBOSS_NODES_TiledUpscaleStitch blends the overlaps + matches each
+  # tile's colours back to the source. Graph from AusBoss's "Qwen Image 2.1 Tiled Upscale" workflow
+  # (civitai 2988629 / version 3388665). Pure-python pack (pyproject `dependencies = []`, no
+  # requirements.txt), loads on ComfyUI >= 0.27.1. Pinned to the 2.15.0 release merge (2026-10-19);
+  # the tile nodes landed in 2.9.0 and the stitch list fix in 2.14. Re-verify output before bumping.
+  - repo: https://github.com/ausboss/ComfyUI-AusBoss
+    ref: bcff77550726a2840666f4238359840f62081514
+    pip_install_requirements: false
+
 # Qwen Image 2.1 — ONE model for text-to-image AND multi-reference image editing
 # (TextEncodeQwenImage21's autogrow `images` input takes image_1..image_16; the
 # official template documents up to 10 references, which is what the site allows).
-# Every node in both graphs is CORE ComfyUI (UNETLoader, CLIPLoader type=qwen_image,
-# VAELoader, TextEncodeQwenImage21, QwenImage21Cache, KSampler, VAEDecode) — no
-# custom_nodes. REQUIREMENTS:
+# Every node in the t2i / edit graphs is CORE ComfyUI (UNETLoader, CLIPLoader type=qwen_image,
+# VAELoader, TextEncodeQwenImage21, QwenImage21Cache, KSampler, VAEDecode); the tiled upscale
+# graph adds the two AusBoss tile nodes below. REQUIREMENTS:
 #   * a base image built with ComfyUI >= v0.37.0 (Qwen Image 2.1 support landed
 #     2026-09-19, first release 2026-09-21);
 #   * the CUDA 13 base (>= 2026-09-22-0516-9e98cc5): the int8_convrot weights below
@@ -97,6 +109,24 @@ model_downloads:
     filename: qwen-image-2.1-consistency.safetensors
     dest: /comfyui/models/loras/
     auth_header_env: CIVITAI_TOKEN
+
+  # ---------- Tiled upscale (pixel-dream qwen-image-2-1:upscale-image) ----------
+  # Qwen Image 2.1 Restore LoRA by AusBoss — civitai model 2989697 / version 3390033 (152 MB, rank 32,
+  # step 1500, ai-toolkit qwen_image_2). Keeps the redraw on the source: ~0.3 px drift, colours and
+  # face identity held. Strength 1.0 for in-focus pictures, 0.5 for blurry ones. No trigger word.
+  # Public HF mirror of the same file (author's repo).
+  - source: hf
+    repo_id: ausboss/Qwen-Image-2.1-Restore-LoRA
+    filename: qwen-image-2.1-restore.safetensors
+    dest: /comfyui/models/loras/
+
+  # Viggle Turbo v0.3 6-step LoRA, rank 128 (680 MB) — the tiled-upscale workflow's "Fast" switch:
+  # 8 steps, cfg 1, euler/simple with it on; 25 steps without it. Qwen Research License (same as the
+  # base weights).
+  - source: hf
+    repo_id: Viggle/Qwen-Image-2.1-viggle-turbo
+    filename: Qwen-Image-2.1-viggle-turbo-v0.3-6step-lora-r128.safetensors
+    dest: /comfyui/models/loras/
 
 output:
   type: image

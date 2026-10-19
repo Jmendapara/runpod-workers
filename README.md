@@ -211,8 +211,11 @@ VAE). Suggested RunPod serverless settings:
 - `minCudaVersion` 13.0 — the image is built on the cu130 base.
 - No start command — the image runs its built-in `/start.sh`.
 - Env: only the four R2 vars below.
-- Graphs (text-to-image and 1–10-reference edit) are built by the caller; see
-  `tests/smoke/qwen-image-2-1.json` for the t2i shape.
+- Graphs (text-to-image, 1–10-reference edit and the tiled upscale) are built by the
+  caller; see `tests/smoke/qwen-image-2-1.json` for the t2i shape and
+  `tests/smoke/qwen-image-2-1.upscale.json` for the upscale. The upscale uses the
+  AusBoss tile nodes (pinned custom node) + the Restore / Viggle Turbo LoRAs: up to
+  ~2 MP is one pass, 4 MP two tiles, 8 MP four tiles (≈ 1 tile-pass of GPU time each).
 
 ## Runtime env vars (set on the RunPod endpoint)
 
