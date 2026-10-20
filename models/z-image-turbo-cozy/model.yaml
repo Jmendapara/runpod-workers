@@ -1,0 +1,41 @@
+# CozyGPU desktop variant of z-image-turbo: same weights and SFW LoRAs plus
+# CharacterDesign-IZT-V1 (Civitai 2500612) so the picker's character-design-sheet entry resolves.
+name: z-image-turbo-cozy
+model_downloads:
+- source: hf
+  repo_id: Comfy-Org/z_image_turbo
+  filename: split_files/diffusion_models/z_image_turbo_bf16.safetensors
+  dest: /comfyui/models/diffusion_models/
+- source: hf
+  repo_id: Comfy-Org/z_image_turbo
+  filename: split_files/text_encoders/qwen_3_4b.safetensors
+  dest: /comfyui/models/text_encoders/
+- source: hf
+  repo_id: Comfy-Org/z_image_turbo
+  filename: split_files/vae/ae.safetensors
+  dest: /comfyui/models/vae/
+- source: hf
+  repo_id: wcde/Z-Image-Turbo-DeJPEG-Lora
+  filename: dejpeg_v3.safetensors
+  dest: /comfyui/models/loras/
+- source: hf
+  repo_id: tarn59/pixel_art_style_lora_z_image_turbo
+  filename: pixel_art_style_z_image_turbo.safetensors
+  dest: /comfyui/models/loras/
+- source: url
+  url: https://civitai.com/api/download/models/2466153
+  filename: Z-TURBO_Photography_35mmPhoto_1536.safetensors
+  dest: /comfyui/models/loras/
+  auth_header_env: CIVITAI_TOKEN
+- source: url
+  url: https://civitai.com/api/download/models/2617751
+  filename: RealisticSnapshot-Zimage-Turbov5.safetensors
+  dest: /comfyui/models/loras/
+  auth_header_env: CIVITAI_TOKEN
+- source: url
+  url: https://civitai.com/api/download/models/2500612
+  filename: CharacterDesign-IZT-V1.safetensors
+  dest: /comfyui/models/loras/
+  auth_header_env: CIVITAI_TOKEN
+output:
+  type: image
