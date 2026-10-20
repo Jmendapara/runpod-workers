@@ -6,15 +6,27 @@ Same pattern every existing handler used, consolidated here.
 Also handles r2_loras: custom (user-uploaded) LoRA files downloaded from R2
 into ComfyUI's loras dir before the workflow is queued, with a container-local
 cache keyed by filename (filenames are globally unique and immutable).
+
+volume_inputs is the bucket-less twin of r2_inputs for CozyGPU volume mode: the
+desktop app has already written the file to the endpoint's network volume (via
+RunPod's S3 API), so the worker just copies it off the mount. No credentials.
 """
 from __future__ import annotations
 
 import base64
 import json
 import os
+import shutil
+import time
 import uuid
 
 COMFY_INPUT_DIR = "/comfyui/input"
+# RunPod mounts an endpoint's network volume here (serverless; Pods use /workspace).
+# Module-level so tests can point it at a temp dir.
+RUNPOD_VOLUME_DIR = "/runpod-volume"
+# Files in COMFY_INPUT_DIR older than this are deleted before each job so a warm
+# worker's container disk does not fill up with past jobs' inputs.
+INPUT_MAX_AGE_SECONDS = 60 * 60
 # The baked loras dir is already a registered ComfyUI `loras` search path, and
 # ComfyUI's folder-list cache invalidates on the dir's mtime — files written
 # here become resolvable by LoraLoader nodes without a restart.
@@ -39,11 +51,14 @@ def validate_input(job_input) -> tuple[dict | None, str | None]:
         return None, "Missing 'workflow' parameter"
 
     r2_inputs = job_input.get("r2_inputs") or []
+    volume_inputs = job_input.get("volume_inputs") or []
     images = job_input.get("images") or []
     r2_loras = job_input.get("r2_loras") or []
 
     if not isinstance(r2_inputs, list):
         return None, "'r2_inputs' must be a list"
+    if not isinstance(volume_inputs, list):
+        return None, "'volume_inputs' must be a list"
     if not isinstance(images, list):
         return None, "'images' must be a list"
     if not isinstance(r2_loras, list):
@@ -55,6 +70,19 @@ def validate_input(job_input) -> tuple[dict | None, str | None]:
         for req in ("node_id", "input_field", "r2_key"):
             if req not in entry:
                 return None, f"r2_inputs[{i}] missing required field '{req}'"
+
+    for i, entry in enumerate(volume_inputs):
+        if not isinstance(entry, dict):
+            return None, f"volume_inputs[{i}] must be an object"
+        for req in ("node_id", "input_field", "key"):
+            if req not in entry:
+                return None, f"volume_inputs[{i}] missing required field '{req}'"
+        # The key is joined onto the mount path verbatim — keep it inside the volume.
+        if not _is_safe_volume_key(entry["key"]):
+            return None, (
+                f"volume_inputs[{i}] key must be a relative path inside the volume "
+                f"(no leading '/', no '..' segments)"
+            )
 
     for i, entry in enumerate(images):
         if not isinstance(entry, dict):
@@ -90,7 +118,7 @@ def validate_input(job_input) -> tuple[dict | None, str | None]:
         lora_key_by_filename[filename] = entry["r2_key"]
 
     seen: set[tuple[str, str]] = set()
-    for arr_name, arr in (("r2_inputs", r2_inputs), ("images", images)):
+    for arr_name, arr in (("r2_inputs", r2_inputs), ("volume_inputs", volume_inputs), ("images", images)):
         for i, entry in enumerate(arr):
             key = (str(entry["node_id"]), entry["input_field"])
             if key in seen:
@@ -118,6 +146,7 @@ def validate_input(job_input) -> tuple[dict | None, str | None]:
     return {
         "workflow": workflow,
         "r2_inputs": r2_inputs,
+        "volume_inputs": volume_inputs,
         "images": images,
         "r2_loras": r2_loras,
         "uid": uid,
@@ -175,6 +204,82 @@ def process_r2_inputs(workflow: dict, r2_inputs: list[dict], target) -> None:
         workflow[node_id]["inputs"][field] = filename
 
         ensure_audio_track(local_path)
+
+
+def _is_safe_volume_key(key) -> bool:
+    """A volume key is a non-empty relative POSIX path with no '..' / empty segments."""
+    if not isinstance(key, str) or not key or key.startswith("/") or "\\" in key:
+        return False
+    return all(part not in ("", ".", "..") for part in key.split("/"))
+
+
+def process_volume_inputs(workflow: dict, volume_inputs: list[dict]) -> None:
+    """Copy each volume input off the network volume into /comfyui/input/ and
+    rewrite the workflow — r2_inputs without a bucket (CozyGPU volume mode).
+
+    The desktop app uploaded `/runpod-volume/<key>` through RunPod's S3 API before
+    submitting the job, so this needs no credentials: just the mount. Video inputs
+    get the same ensure_audio_track() repair r2_inputs applies.
+    """
+    if not volume_inputs:
+        return
+
+    if not os.path.isdir(RUNPOD_VOLUME_DIR):
+        raise ValueError("No network volume mounted")
+
+    from .ffmpeg_helpers import ensure_audio_track
+
+    os.makedirs(COMFY_INPUT_DIR, exist_ok=True)
+    print(f"worker-comfyui - Copying {len(volume_inputs)} volume input(s) from {RUNPOD_VOLUME_DIR}...", flush=True)
+    for entry in volume_inputs:
+        node_id = str(entry["node_id"])
+        field = entry["input_field"]
+        key = entry["key"]
+
+        if node_id not in workflow:
+            raise ValueError(f"volume_inputs references node_id '{node_id}' not in the workflow")
+        if "inputs" not in workflow[node_id]:
+            raise ValueError(f"Workflow node '{node_id}' has no 'inputs' dict")
+
+        src_path = os.path.join(RUNPOD_VOLUME_DIR, key)
+        if not os.path.isfile(src_path):
+            raise ValueError(f"Volume input not found: {key}")
+
+        filename = os.path.basename(key)
+        local_path = os.path.join(COMFY_INPUT_DIR, filename)
+        print(f"worker-comfyui - volume: {key} -> {local_path} (node {node_id}.{field})", flush=True)
+        shutil.copyfile(src_path, local_path)
+        workflow[node_id]["inputs"][field] = filename
+
+        ensure_audio_track(local_path)
+
+
+def prune_stale_inputs(max_age_seconds: float = INPUT_MAX_AGE_SECONDS, now: float | None = None) -> int:
+    """Delete files in /comfyui/input older than `max_age_seconds`; returns the count.
+
+    Warm workers keep their container disk between jobs, so every r2/volume/inline
+    input would otherwise accumulate until the worker is recycled. Only top-level
+    files go (ComfyUI's own subfolders stay); every error is ignored — this is
+    housekeeping, never a reason to fail a job.
+    """
+    try:
+        entries = list(os.scandir(COMFY_INPUT_DIR))
+    except OSError:
+        return 0
+    cutoff = (time.time() if now is None else now) - max_age_seconds
+    removed = 0
+    for entry in entries:
+        try:
+            if not entry.is_file(follow_symlinks=False):
+                continue
+            if entry.stat(follow_symlinks=False).st_mtime < cutoff:
+                os.remove(entry.path)
+                removed += 1
+        except OSError:
+            continue
+    if removed:
+        print(f"worker-comfyui - Pruned {removed} stale input file(s) from {COMFY_INPUT_DIR}", flush=True)
+    return removed
 
 
 def process_r2_loras(r2_loras: list[dict], target) -> None:

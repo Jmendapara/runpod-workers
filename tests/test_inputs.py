@@ -1,4 +1,5 @@
-"""Unit tests for base/lib/inputs.py — r2_loras validation + download cache.
+"""Unit tests for base/lib/inputs.py — r2_loras validation + download cache,
+volume_inputs (CozyGPU volume mode) and the stale-input prune.
 
 CI only validates model.yaml schemas, so run these locally:
     python3 tests/test_inputs.py
@@ -257,6 +258,306 @@ def test_process_r2_inputs_downloads_from_target_input_bucket_and_rewrites_workf
     finally:
         inputs.COMFY_INPUT_DIR = prev_dir
         tmp.cleanup()
+
+
+# ---- validate_input: volume_inputs (CozyGPU volume mode) ----
+
+def test_no_volume_inputs_defaults_to_empty_list():
+    data, err = inputs.validate_input(_valid_base())
+    assert err is None
+    assert data["volume_inputs"] == []
+
+
+def test_valid_volume_inputs_pass_through():
+    entries = [
+        {"node_id": "1", "input_field": "image", "key": "cozygpu/inputs/abc123.png"},
+        {"node_id": 1, "input_field": "video", "key": "cozygpu/inputs/def456.mp4"},
+        {"node_id": "1", "input_field": "mask", "key": "cozygpu/inputs/x..y.png"},  # '..' inside a name is fine
+    ]
+    data, err = inputs.validate_input(_valid_base(volume_inputs=entries))
+    assert err is None, err
+    assert data["volume_inputs"] == entries
+
+
+def test_volume_inputs_must_be_list():
+    _expect_error(_valid_base(volume_inputs="nope"), "'volume_inputs' must be a list")
+    _expect_error(_valid_base(volume_inputs={"node_id": "1"}), "'volume_inputs' must be a list")
+
+
+def test_volume_inputs_entry_must_be_object():
+    _expect_error(_valid_base(volume_inputs=["nope"]), "volume_inputs[0] must be an object")
+
+
+def test_volume_inputs_requires_fields():
+    _expect_error(
+        _valid_base(volume_inputs=[{"input_field": "image", "key": "a.png"}]),
+        "volume_inputs[0] missing required field 'node_id'",
+    )
+    _expect_error(
+        _valid_base(volume_inputs=[{"node_id": "1", "key": "a.png"}]),
+        "volume_inputs[0] missing required field 'input_field'",
+    )
+    _expect_error(
+        _valid_base(volume_inputs=[{"node_id": "1", "input_field": "image"}]),
+        "volume_inputs[0] missing required field 'key'",
+    )
+
+
+def test_volume_inputs_key_traversal_guards():
+    bad_keys = (
+        "/abs/x.png", "../x.png", "cozygpu/../../etc/passwd", "cozygpu/inputs/..",
+        "", "a//b.png", "./x.png", "cozygpu/inputs/", "a\\b.png", 5, None,
+    )
+    for bad in bad_keys:
+        _expect_error(
+            _valid_base(volume_inputs=[{"node_id": "1", "input_field": "image", "key": bad}]),
+            "volume_inputs[0] key must be a relative path inside the volume",
+        )
+
+
+def test_volume_inputs_duplicate_target_rejected_across_arrays():
+    vol = {"node_id": "1", "input_field": "image", "key": "cozygpu/inputs/a.png"}
+    r2 = {"node_id": 1, "input_field": "image", "r2_key": "users/u1/a.png"}
+    img = {"node_id": "1", "input_field": "image", "name": "a.png", "image": "aGk="}
+    _expect_error(
+        _valid_base(r2_inputs=[r2], volume_inputs=[vol]),
+        "volume_inputs[0] targets node_id=1, input_field=image",
+    )
+    _expect_error(
+        _valid_base(volume_inputs=[vol], images=[img]),
+        "images[0] targets node_id=1, input_field=image",
+    )
+    _expect_error(
+        _valid_base(volume_inputs=[vol, dict(vol)]),
+        "volume_inputs[1] targets node_id=1, input_field=image",
+    )
+
+
+def test_volume_inputs_distinct_fields_on_same_node_allowed():
+    data, err = inputs.validate_input(_valid_base(
+        r2_inputs=[{"node_id": "1", "input_field": "image", "r2_key": "users/u1/a.png"}],
+        volume_inputs=[{"node_id": "1", "input_field": "mask", "key": "cozygpu/inputs/m.png"}],
+    ))
+    assert err is None, err
+
+
+# ---- process_volume_inputs ----
+
+class _VolumeEnv:
+    """Temp dirs standing in for /runpod-volume and /comfyui/input, restored on exit.
+
+    `mounted=False` models an endpoint with no network volume attached (the mount
+    dir does not exist). ensure_audio_track is stubbed and records the paths it is
+    handed, so tests can assert the r2_inputs post-step runs for volume inputs too.
+    """
+
+    def __init__(self, mounted=True):
+        self.mounted = mounted
+
+    def __enter__(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.volume_dir = os.path.join(self.tmp.name, "volume")
+        self.input_dir = os.path.join(self.tmp.name, "input")
+        if self.mounted:
+            os.makedirs(self.volume_dir)
+        self.prev_volume = inputs.RUNPOD_VOLUME_DIR
+        self.prev_input = inputs.COMFY_INPUT_DIR
+        inputs.RUNPOD_VOLUME_DIR = self.volume_dir
+        inputs.COMFY_INPUT_DIR = self.input_dir
+        self.audio_fixed: list[str] = []
+        fake_ffmpeg = types.ModuleType("lib.ffmpeg_helpers")
+        fake_ffmpeg.ensure_audio_track = lambda path: self.audio_fixed.append(path) or False
+        self.prev_ffmpeg = sys.modules.get("lib.ffmpeg_helpers")
+        sys.modules["lib.ffmpeg_helpers"] = fake_ffmpeg
+        return self
+
+    def __exit__(self, *exc):
+        inputs.RUNPOD_VOLUME_DIR = self.prev_volume
+        inputs.COMFY_INPUT_DIR = self.prev_input
+        if self.prev_ffmpeg is None:
+            sys.modules.pop("lib.ffmpeg_helpers", None)
+        else:
+            sys.modules["lib.ffmpeg_helpers"] = self.prev_ffmpeg
+        self.tmp.cleanup()
+        return False
+
+    def put(self, key, payload=b"x" * 16):
+        path = os.path.join(self.volume_dir, key)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "wb") as f:
+            f.write(payload)
+        return path
+
+    def local(self, filename):
+        return os.path.join(self.input_dir, filename)
+
+
+def _expect_value_error(fn, needle, exact=False):
+    try:
+        fn()
+    except ValueError as exc:
+        if exact:
+            assert str(exc) == needle, f"expected {needle!r}, got {exc!r}"
+        else:
+            assert needle in str(exc), f"expected error containing {needle!r}, got {exc!r}"
+    else:
+        raise AssertionError(f"expected ValueError containing {needle!r}")
+
+
+def test_process_volume_inputs_empty_list_is_noop_without_mount():
+    with _VolumeEnv(mounted=False) as env:
+        inputs.process_volume_inputs({"1": {"inputs": {}}}, [])
+        assert not os.path.exists(env.input_dir)
+        assert env.audio_fixed == []
+
+
+def test_process_volume_inputs_requires_mount():
+    with _VolumeEnv(mounted=False) as env:
+        workflow = {"5": {"class_type": "LoadImage", "inputs": {"image": ""}}}
+        _expect_value_error(
+            lambda: inputs.process_volume_inputs(
+                workflow, [{"node_id": "5", "input_field": "image", "key": "cozygpu/inputs/x.png"}]
+            ),
+            "No network volume mounted",
+            exact=True,
+        )
+        assert workflow["5"]["inputs"]["image"] == ""
+        assert not os.path.exists(env.input_dir)
+
+
+def test_process_volume_inputs_missing_file():
+    with _VolumeEnv() as env:
+        env.put("cozygpu/inputs/other.png")
+        workflow = {"5": {"class_type": "LoadImage", "inputs": {"image": ""}}}
+        _expect_value_error(
+            lambda: inputs.process_volume_inputs(
+                workflow, [{"node_id": "5", "input_field": "image", "key": "cozygpu/inputs/missing.png"}]
+            ),
+            "Volume input not found: cozygpu/inputs/missing.png",
+            exact=True,
+        )
+        assert workflow["5"]["inputs"]["image"] == ""
+        assert not os.path.exists(env.local("missing.png"))
+        assert env.audio_fixed == []
+
+
+def test_process_volume_inputs_directory_key_is_not_a_file():
+    with _VolumeEnv() as env:
+        env.put("cozygpu/inputs/dir/inner.png")
+        _expect_value_error(
+            lambda: inputs.process_volume_inputs(
+                {"5": {"inputs": {}}}, [{"node_id": "5", "input_field": "image", "key": "cozygpu/inputs/dir"}]
+            ),
+            "Volume input not found: cozygpu/inputs/dir",
+            exact=True,
+        )
+
+
+def test_process_volume_inputs_copies_rewrites_and_repairs_audio():
+    with _VolumeEnv() as env:
+        png = b"\x89PNG\r\n\x1a\n" + b"0" * 32
+        env.put("cozygpu/inputs/abc.png", png)
+        env.put("cozygpu/inputs/def.mp4", b"\x00" * 64)
+        workflow = {
+            "5": {"class_type": "LoadImage", "inputs": {"image": ""}},
+            "7": {"class_type": "VHS_LoadVideo", "inputs": {"video": ""}},
+        }
+        inputs.process_volume_inputs(workflow, [
+            {"node_id": 5, "input_field": "image", "key": "cozygpu/inputs/abc.png"},
+            {"node_id": "7", "input_field": "video", "key": "cozygpu/inputs/def.mp4"},
+        ])
+        # workflow rewritten to the bare basename (ComfyUI resolves it under /comfyui/input)
+        assert workflow["5"]["inputs"]["image"] == "abc.png"
+        assert workflow["7"]["inputs"]["video"] == "def.mp4"
+        with open(env.local("abc.png"), "rb") as f:
+            assert f.read() == png
+        assert os.path.getsize(env.local("def.mp4")) == 64
+        # same post-step as r2_inputs: ensure_audio_track runs on every copied file
+        # (the real helper no-ops itself on non-video extensions)
+        assert env.audio_fixed == [env.local("abc.png"), env.local("def.mp4")]
+        # the source stays on the volume — the app owns its lifecycle
+        assert os.path.exists(os.path.join(env.volume_dir, "cozygpu/inputs/abc.png"))
+
+
+def test_process_volume_inputs_unknown_node_rejected():
+    with _VolumeEnv() as env:
+        env.put("cozygpu/inputs/abc.png")
+        _expect_value_error(
+            lambda: inputs.process_volume_inputs(
+                {"5": {"inputs": {}}}, [{"node_id": "6", "input_field": "image", "key": "cozygpu/inputs/abc.png"}]
+            ),
+            "volume_inputs references node_id '6' not in the workflow",
+        )
+        assert not os.path.exists(env.local("abc.png"))
+
+
+def test_process_volume_inputs_node_without_inputs_rejected():
+    with _VolumeEnv() as env:
+        env.put("cozygpu/inputs/abc.png")
+        _expect_value_error(
+            lambda: inputs.process_volume_inputs(
+                {"5": {"class_type": "LoadImage"}}, [{"node_id": "5", "input_field": "image", "key": "cozygpu/inputs/abc.png"}]
+            ),
+            "Workflow node '5' has no 'inputs' dict",
+        )
+
+
+# ---- prune_stale_inputs ----
+
+class _InputDir:
+    def __enter__(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.prev = inputs.COMFY_INPUT_DIR
+        inputs.COMFY_INPUT_DIR = self.tmp.name
+        return self
+
+    def __exit__(self, *exc):
+        inputs.COMFY_INPUT_DIR = self.prev
+        self.tmp.cleanup()
+        return False
+
+    def file(self, name, mtime):
+        path = os.path.join(self.tmp.name, name)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "wb") as f:
+            f.write(b"x")
+        os.utime(path, (mtime, mtime))
+        return path
+
+
+def test_prune_stale_inputs_removes_only_old_top_level_files():
+    now = 1_000_000.0
+    with _InputDir() as d:
+        old = d.file("old.png", now - 2 * 3600)
+        fresh = d.file("fresh.png", now - 60)
+        nested = d.file("clipspace/ancient.png", now - 2 * 3600)
+        os.utime(os.path.dirname(nested), (now - 2 * 3600, now - 2 * 3600))
+        assert inputs.prune_stale_inputs(now=now) == 1
+        assert not os.path.exists(old)
+        assert os.path.exists(fresh)
+        assert os.path.exists(nested)  # subfolders (ComfyUI's own) are left alone
+        assert os.path.isdir(d.tmp.name)  # the dir itself survives
+        assert inputs.prune_stale_inputs(now=now) == 0  # idempotent
+
+
+def test_prune_stale_inputs_default_age_is_one_hour_and_boundary_is_strict():
+    assert inputs.INPUT_MAX_AGE_SECONDS == 3600
+    now = 1_000_000.0
+    with _InputDir() as d:
+        at_limit = d.file("at-limit.png", now - 3600)
+        past_limit = d.file("past-limit.png", now - 3601)
+        assert inputs.prune_stale_inputs(now=now) == 1
+        assert os.path.exists(at_limit)
+        assert not os.path.exists(past_limit)
+
+
+def test_prune_stale_inputs_missing_dir_is_noop():
+    prev = inputs.COMFY_INPUT_DIR
+    inputs.COMFY_INPUT_DIR = os.path.join(tempfile.gettempdir(), "comfy-input-does-not-exist-" + os.urandom(4).hex())
+    try:
+        assert inputs.prune_stale_inputs() == 0
+    finally:
+        inputs.COMFY_INPUT_DIR = prev
 
 
 if __name__ == "__main__":

@@ -263,9 +263,53 @@ and the configured profile names at startup — never the credentials.
 
 Unit tests: `python3 tests/test_bucket_profiles.py` and `python3 tests/test_inputs.py`.
 
+### CozyGPU volume mode (no bucket; the user's own RunPod account)
+
+The CozyGPU desktop app runs these same images inside the **end user's** RunPod
+account, with up to three network volumes attached to an endpoint (one per
+datacenter; each worker sees its own datacenter's volume at `/runpod-volume`). The
+worker needs **no S3 credentials and no bucket env** for this — leave every
+`BUCKET_*` / `R2_*` var unset. The app talks to the volume through RunPod's S3 API;
+the worker only ever touches the mount:
+
+- **Marker file** — the app writes `/runpod-volume/.cozygpu-volume.json` on every
+  volume it attaches: `{"volumeId": "…", "dataCenter": "US-KS-2", "app": "cozygpu", …}`.
+  It is how the worker tells the app *which* volume it used. No marker, or a
+  malformed one (not JSON, not an object, missing `volumeId` / `dataCenter`) → the
+  worker behaves exactly like any endpoint without R2: base64 responses.
+- **User LoRAs** — the app uploads them to `/runpod-volume/models/loras/<file>.safetensors`.
+  ComfyUI already searches that path (`base/runtime/extra_model_paths.yaml`), so the
+  workflow just names the file; no `r2_loras` entry is needed.
+- **Large inputs** — `volume_inputs: [{"node_id", "input_field", "key"}]` is the
+  bucket-less twin of `r2_inputs`. The app uploads to
+  `/runpod-volume/cozygpu/inputs/<sha256>.<ext>`; the worker copies `/runpod-volume/<key>`
+  to `/comfyui/input/<basename>` and rewrites that node input to the basename (video
+  inputs get the same silent-audio repair as `r2_inputs`). `key` is relative to the
+  mount — no leading `/`, no `..` — and a `(node_id, input_field)` may not also appear
+  in `images` / `r2_inputs`. Errors: `Volume input not found: <key>`,
+  `No network volume mounted`. Small inputs can still travel inline via `images`.
+- **Hybrid output return** — with no bucket target and a valid marker, every output
+  larger than **8 MB** (`VOLUME_RETURN_THRESHOLD_BYTES` in `base/lib/collectors.py`)
+  is written to `/runpod-volume/cozygpu/outputs/<job_id>/<filename>` and returned as
+  `{"filename", "type": "volume", "volume_id", "data_center", "key", "size_bytes"}`
+  for the app to fetch over the S3 API (`key` is relative to the volume root).
+  Files at or under 8 MB come back as `"type": "base64"` exactly as before. Bucket
+  (`s3_url`) mode is unchanged. If the volume write fails, the file falls back to
+  base64 with a warning in the worker log.
+- **Housekeeping** — before each job the worker deletes files in `/comfyui/input`
+  older than one hour, so warm workers do not accumulate inputs. Files on the volume
+  (`cozygpu/inputs`, `cozygpu/outputs`) are the app's to clean up.
+
+Desktop builds use the `-cozy` model variants (`models/qwen-image-2-1-cozy`,
+`models/minimax-h3-cozy`): identical to their siblings minus the NSFW LoRAs.
+`z-image-turbo` ships no NSFW entries, so it is shared as-is.
+
+Unit tests: `python3 tests/test_inputs.py` and `python3 tests/test_collectors_volume.py`.
+
 Worker tuning:
 - `REFRESH_WORKER=true` to recycle the worker after each job
-- `NETWORK_VOLUME_DEBUG=true` (default) for `/runpod-volume` diagnostics
+- `NETWORK_VOLUME_DEBUG=true` for `/runpod-volume` diagnostics (default off; the dump
+  lists env var *names* only, never values)
 - `COMFY_LOG_LEVEL=DEBUG` (default), `COMFY_RESTART_DELAY=5`, `COMFY_MAX_RAPID_RESTARTS=5`
 - `WEBSOCKET_RECONNECT_ATTEMPTS=5`, `WEBSOCKET_RECONNECT_DELAY_S=3`
 - `WEBSOCKET_TRACE=true` to enable websocket-client trace logging

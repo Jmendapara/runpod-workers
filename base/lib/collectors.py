@@ -2,15 +2,39 @@
 
 Driven by `output.type` in model.yaml. Pluggable transform (FLAC→WAV) and
 filter (VHS sidecar) attach based on per-model flags.
+
+Response shapes per item:
+  * bucket configured            → {"type": "s3_url", "data": <presigned url>}
+  * no bucket, CozyGPU volume
+    marker + file > threshold    → {"type": "volume", "key": ..., "volume_id": ...}
+  * otherwise                    → {"type": "base64", "data": ...}
 """
 from __future__ import annotations
 
 import base64
+import json
+import os
+import uuid
 from dataclasses import dataclass
 from typing import Callable, Optional
 
 from .config import OutputConfig
 from .ffmpeg_helpers import flac_to_wav
+
+# ---- CozyGPU volume mode (no bucket, user's own RunPod account) ----
+# Outputs larger than this are written to the endpoint's network volume instead of
+# being base64-encoded into the response (RunPod truncates large responses).
+# Smaller files stay inline: one round trip, no S3 fetch needed by the app.
+VOLUME_RETURN_THRESHOLD_BYTES = 8 * 1024 * 1024
+# Serverless mount point (module-level so tests can point it at a temp dir).
+RUNPOD_VOLUME_DIR = "/runpod-volume"
+# Written by the desktop app onto every volume it attaches, through RunPod's S3 API:
+# {"volumeId": "...", "dataCenter": "US-KS-2", "app": "cozygpu", ...}. Absent or
+# malformed → plain base64 responses, exactly as an endpoint without R2 behaves.
+VOLUME_MARKER_FILENAME = ".cozygpu-volume.json"
+# Outputs land at <mount>/cozygpu/outputs/<job_id>/<filename>; the app reads them
+# back by key through the same S3 API and knows which volume from the response.
+VOLUME_OUTPUTS_PREFIX = "cozygpu/outputs"
 
 
 # Type aliases
@@ -88,10 +112,21 @@ class CollectorSet:
         """Walk ComfyUI history outputs and produce the final response shape.
 
         Returns dict with keys like "images", "videos", "audio", and "errors".
-        Honors R2 upload if uploader != None, else returns base64.
+        Honors R2 upload if uploader != None, else returns base64 — or, with a
+        CozyGPU volume marker on the mount, writes files over the threshold to
+        the network volume and returns a "volume" item (see _to_response_item).
         """
         result: dict[str, list] = {}
         errors: list[str] = []
+
+        # Parsed once per job; None means "no volume mode" (bucket mode, or no/bad marker).
+        volume = load_volume_marker() if uploader is None else None
+        if volume is not None:
+            print(
+                f"worker-comfyui - CozyGPU volume {volume['volume_id']} ({volume['data_center']}) "
+                f"detected: outputs over {VOLUME_RETURN_THRESHOLD_BYTES} bytes return as volume keys",
+                flush=True,
+            )
 
         outputs = history.get("outputs", {})
         if not outputs:
@@ -155,7 +190,9 @@ class CollectorSet:
                     if collector.transform:
                         file_bytes, filename = collector.transform(file_bytes, filename)
 
-                    item = _to_response_item(file_bytes, filename, job_id, uid, uploader, errors)
+                    item = _to_response_item(
+                        file_bytes, filename, job_id, uid, uploader, errors, volume=volume
+                    )
                     if item is not None:
                         # Derived assets (thumbnails/posters/previews) are NOT generated here. A
                         # Firestore-triggered Cloud Function (opensourcegen functions/) is the sole
@@ -175,6 +212,57 @@ class CollectorSet:
         return result
 
 
+def load_volume_marker() -> dict | None:
+    """Read the CozyGPU marker off the mount → {"volume_id", "data_center"} or None.
+
+    None (absent, unreadable, not JSON, not an object, or missing either id) means
+    the worker behaves exactly like a plain no-R2 endpoint: base64 responses.
+    """
+    path = os.path.join(RUNPOD_VOLUME_DIR, VOLUME_MARKER_FILENAME)
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    volume_id = data.get("volumeId")
+    data_center = data.get("dataCenter")
+    if not isinstance(volume_id, str) or not volume_id.strip():
+        return None
+    if not isinstance(data_center, str) or not data_center.strip():
+        return None
+    return {"volume_id": volume_id.strip(), "data_center": data_center.strip()}
+
+
+def _write_volume_output(file_bytes: bytes, filename: str, job_id: str, volume: dict) -> dict:
+    """Write one output under <mount>/cozygpu/outputs/<job_id>/ and build its response item."""
+    leaf = os.path.basename(filename)
+    key = f"{VOLUME_OUTPUTS_PREFIX}/{job_id}/{leaf}"
+    dest = os.path.join(RUNPOD_VOLUME_DIR, VOLUME_OUTPUTS_PREFIX, job_id, leaf)
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    # Temp + rename so the app can never read a half-written file at the final key.
+    tmp = f"{dest}.part-{uuid.uuid4().hex}"
+    try:
+        with open(tmp, "wb") as f:
+            f.write(file_bytes)
+        os.replace(tmp, dest)
+    finally:
+        if os.path.exists(tmp):
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+    return {
+        "filename": leaf,
+        "type": "volume",
+        "volume_id": volume["volume_id"],
+        "data_center": volume["data_center"],
+        "key": key,
+        "size_bytes": len(file_bytes),
+    }
+
+
 def _to_response_item(
     file_bytes: bytes,
     filename: str,
@@ -182,6 +270,7 @@ def _to_response_item(
     uid: str | None,
     uploader,
     errors: list[str],
+    volume: dict | None = None,
 ) -> dict | None:
     if uploader is not None:
         try:
@@ -191,6 +280,22 @@ def _to_response_item(
         except Exception as exc:
             errors.append(f"Error uploading {filename} to R2: {exc}")
             return None
+
+    if volume is not None and len(file_bytes) > VOLUME_RETURN_THRESHOLD_BYTES:
+        try:
+            item = _write_volume_output(file_bytes, filename, job_id, volume)
+            print(
+                f"worker-comfyui - Wrote {filename} ({len(file_bytes)} bytes) to volume "
+                f"{volume['volume_id']} as {item['key']}",
+                flush=True,
+            )
+            return item
+        except Exception as exc:  # noqa: BLE001 — fall back to inline rather than lose the output
+            print(
+                f"worker-comfyui - WARNING: could not write {filename} to the network volume "
+                f"({exc}); returning base64 instead",
+                flush=True,
+            )
 
     try:
         file_size_mb = len(file_bytes) / (1024 * 1024)

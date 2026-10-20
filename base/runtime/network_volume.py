@@ -2,7 +2,9 @@
 Network Volume diagnostics for worker-comfyui.
 
 This module provides tools to debug network volume model path issues.
-Enable diagnostics by setting NETWORK_VOLUME_DEBUG=true environment variable.
+Enable diagnostics by setting NETWORK_VOLUME_DEBUG=true environment variable
+(off by default: the dump is noisy per job, and these workers also run inside
+end users' own RunPod accounts, so it must never print env var values).
 """
 
 import os
@@ -24,7 +26,7 @@ MODEL_TYPES = {
 
 def is_network_volume_debug_enabled():
     """Check if network volume debug mode is enabled via environment variable."""
-    return os.environ.get("NETWORK_VOLUME_DEBUG", "true").lower() == "true"
+    return os.environ.get("NETWORK_VOLUME_DEBUG", "false").lower() == "true"
 
 
 def run_network_volume_diagnostics():
@@ -82,18 +84,18 @@ def run_network_volume_diagnostics():
             "    (existing workers do not get the volume). Scale to zero, run a job, or wait"
         )
         print("    for cold start. See docs.runpod.io/serverless/storage/network-volumes")
-        # RunPod-related env vars (may reveal alternate mount path)
+        # RunPod-related env vars (may reveal alternate mount path). Names only —
+        # values are never printed (the env may hold tokens and bucket credentials).
         runpod_vars = [k for k in os.environ if "RUNPOD" in k or "VOLUME" in k or "MOUNT" in k]
         if runpod_vars:
-            print("    RunPod/volume-related env:")
+            print("    RunPod/volume-related env (names only):")
             for var in sorted(runpod_vars):
-                print(f"      - {var}={os.environ[var]}")
+                print(f"      - {var}")
         print("    Additional Debug Info:")
         print("      - Current working directory:", os.getcwd())
-        for var in ["RUNPOD_MOUNT_PATH", "WORKSPACE_DIR", "HOME"]:
-            value = os.environ.get(var)
-            if value:
-                print(f"      - {var}={value}")
+        set_vars = [var for var in ("RUNPOD_MOUNT_PATH", "WORKSPACE_DIR", "HOME") if os.environ.get(var)]
+        if set_vars:
+            print(f"      - Env vars set (names only): {', '.join(set_vars)}")
         print("      - Root (/) contents: see [0] above.")
         print("    ➡️  HINT: Check docker-compose volumes or RunPod endpoint Network Volume.")
         print("=" * 70)

@@ -1,0 +1,108 @@
+# CozyGPU desktop variant of qwen-image-2-1: same base weights, custom node and build; only the SFW LoRAs.
+# Removed vs models/qwen-image-2-1: NSFW_Qwen_TheseAlpacas_V2, nicegirls_v2_qwen21 and qwen21_vagina_v1.
+name: qwen-image-2-1-cozy
+
+custom_nodes:
+  # AusBoss nodes (MIT) — ONLY for the tiled upscale graph: AUSBOSS_NODES_TiledUpscale cuts the
+  # (lanczos-enlarged) picture into ~2 MP tiles (OUTPUT_IS_LIST → the encode/sample/decode chain
+  # runs once per tile) and AUSBOSS_NODES_TiledUpscaleStitch blends the overlaps + matches each
+  # tile's colours back to the source. Graph from AusBoss's "Qwen Image 2.1 Tiled Upscale" workflow
+  # (civitai 2988629 / version 3388665). Pure-python pack (pyproject `dependencies = []`, no
+  # requirements.txt), loads on ComfyUI >= 0.27.1. Pinned to the 2.15.0 release merge (2026-10-19);
+  # the tile nodes landed in 2.9.0 and the stitch list fix in 2.14. Re-verify output before bumping.
+  - repo: https://github.com/ausboss/ComfyUI-AusBoss
+    ref: bcff77550726a2840666f4238359840f62081514
+    pip_install_requirements: false
+
+# Qwen Image 2.1 — ONE model for text-to-image AND multi-reference image editing
+# (TextEncodeQwenImage21's autogrow `images` input takes image_1..image_16; the
+# official template documents up to 10 references, which is what the app allows).
+# Every node in the t2i / edit graphs is CORE ComfyUI (UNETLoader, CLIPLoader type=qwen_image,
+# VAELoader, TextEncodeQwenImage21, QwenImage21Cache, KSampler, VAEDecode); the tiled upscale
+# graph adds the two AusBoss tile nodes below. REQUIREMENTS:
+#   * a base image built with ComfyUI >= v0.37.0 (Qwen Image 2.1 support landed
+#     2026-09-19, first release 2026-09-21);
+#   * the CUDA 13 base (>= 2026-09-22-0516-9e98cc5): the int8_convrot weights below
+#     need comfy-kitchen's CUDA kernels, which ComfyUI disables on cu128 (slow dequant).
+# Graphs are built by the CozyGPU desktop app; input images arrive inline (`images`) or as
+# `volume_inputs` off the endpoint's network volume (see README "CozyGPU volume mode").
+# All weights are public.
+
+model_downloads:
+  # Diffusion model — int8 ConvRot (template default; 7.3 GB, ~2x lighter than bf16)
+  - source: hf
+    repo_id: Comfy-Org/Qwen-Image-2.1
+    filename: diffusion_models/qwen_image_2.1_int8_convrot.safetensors
+    dest: /comfyui/models/diffusion_models/
+
+  # Text encoder — Qwen3-VL 8B int8 ConvRot (CLIPLoader type=qwen_image; 9.4 GB)
+  - source: hf
+    repo_id: Comfy-Org/Qwen-Image-2.1
+    filename: text_encoders/qwen3vl_8b_int8_convrot.safetensors
+    dest: /comfyui/models/text_encoders/
+
+  # VAE — 4-channel (alpha-capable) Qwen Image 2.1 VAE, bf16 (0.7 GB)
+  - source: hf
+    repo_id: Comfy-Org/Qwen-Image-2.1
+    filename: vae/qwen_image_2.1_vae_bf16.safetensors
+    dest: /comfyui/models/vae/
+
+  # ---------- LoRAs (selectable / auto-applied by the CozyGPU app) ----------
+  # Lenovo UltraReal v1.0 Qwen2.1 by Danrisi — civitai model 1662740 / version 3349565 (76 MB).
+  # Realism LoRA, no trigger word. Author guidance (Qwen 2.1): cfg 3-4, beta scheduler,
+  # res_multistep / res_2m / res_2s.
+  - source: url
+    url: https://civitai.com/api/download/models/3349565
+    filename: lenovo_qwen21.safetensors
+    dest: /comfyui/models/loras/
+    auth_header_env: CIVITAI_TOKEN
+
+  # SamsungCam UltraReal v1.0 Qwen2.1 by Danrisi — civitai model 1551668 / version 3354434 (76 MB).
+  # Samsung S-series phone-photo realism, no trigger word; retrained on S25 Ultra photos for 2.1.
+  # Author: 0.7 strength (0.7-1.0 depending on artifacts); stacks with Lenovo.
+  - source: url
+    url: https://civitai.com/api/download/models/3354434
+    filename: samsung_qwen21.safetensors
+    dest: /comfyui/models/loras/
+    auth_header_env: CIVITAI_TOKEN
+
+  # Qwen Image 2.1 Anime2Real-Semi Beta v1.0 by arpalest — civitai model 2960136 / version 3353415
+  # (152 MB, rank 32). IMAGE-EDIT LoRA: turns an anime character into a (semi-)realistic person.
+  # Trigger "Convert to realistic style", weight 0.9; trained 1:1. Canonical file has a space → renamed.
+  - source: url
+    url: https://civitai.com/api/download/models/3353415
+    filename: qwen21_anime2real_semi_beta.safetensors
+    dest: /comfyui/models/loras/
+    auth_header_env: CIVITAI_TOKEN
+
+  # Qwen Image 2.1 Consistency LoRA v1.0 by AusBoss — civitai model 2969143 / version 3364470
+  # (152 MB, rank 32, step 1500). IMAGE-EDIT LoRA: keeps the edit on the original's frame (no
+  # zoom / shift drift, less repaint outside the edited area). No trigger word. Author guidance:
+  # LoraLoaderModelOnly right after the model loader, strength 1.0, 25 steps, cfg 1, euler/simple,
+  # denoise 1, sample on TextEncodeQwenImage21's latent. Off for big removals (ghosting).
+  - source: url
+    url: https://civitai.com/api/download/models/3364470
+    filename: qwen-image-2.1-consistency.safetensors
+    dest: /comfyui/models/loras/
+    auth_header_env: CIVITAI_TOKEN
+
+  # ---------- Tiled upscale ----------
+  # Qwen Image 2.1 Restore LoRA by AusBoss — civitai model 2989697 / version 3390033 (152 MB, rank 32,
+  # step 1500, ai-toolkit qwen_image_2). Keeps the redraw on the source: ~0.3 px drift, colours and
+  # face identity held. Strength 1.0 for in-focus pictures, 0.5 for blurry ones. No trigger word.
+  # Public HF mirror of the same file (author's repo).
+  - source: hf
+    repo_id: ausboss/Qwen-Image-2.1-Restore-LoRA
+    filename: qwen-image-2.1-restore.safetensors
+    dest: /comfyui/models/loras/
+
+  # Viggle Turbo v0.3 6-step LoRA, rank 128 (680 MB) — the tiled-upscale workflow's "Fast" switch:
+  # 8 steps, cfg 1, euler/simple with it on; 25 steps without it. Qwen Research License (same as the
+  # base weights).
+  - source: hf
+    repo_id: Viggle/Qwen-Image-2.1-viggle-turbo
+    filename: Qwen-Image-2.1-viggle-turbo-v0.3-6step-lora-r128.safetensors
+    dest: /comfyui/models/loras/
+
+output:
+  type: image

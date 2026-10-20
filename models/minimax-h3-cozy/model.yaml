@@ -1,0 +1,91 @@
+# CozyGPU desktop variant of minimax-h3: all main weights and both lightx2v turbo LoRAs, built the same way.
+# Removed vs models/minimax-h3: the M3_Unlocked_V2.1 (MiniMax H3 NSFW Unlocked) LoRA.
+name: minimax-h3-cozy
+# MiniMax H3 — text-to-video, first/last-frame image-to-video, reference-to-video
+# and multiframe reference (chained MiniMaxH3AddGuide), all with native stereo audio
+# (https://docs.comfy.org/tutorials/video/minimax/minimax-h3).
+#
+# ALL nodes are ComfyUI CORE: MiniMaxH3ImageToVideo (t2va when no first_frame is
+# connected, fl2va when one is), MiniMaxH3ReferenceToVideo (ref2va — a SEPARATE
+# diffusion model file), MiniMaxH3AddGuide (multiframe anchors, ComfyUI >= 0.37.0),
+# CLIPLoader type=minimax, VAEDecodeAudio, CreateVideo, SaveVideo. No custom nodes.
+#
+# REQUIREMENTS (both come from the shared base, not this file):
+#   * ComfyUI >= 0.30.0 — the MiniMax H3 nodes landed in comfyanonymous/ComfyUI#15224
+#     (merged 2026-08-03). Symptom on an older base: "Node 'MiniMaxH3ImageToVideo' not found".
+#   * CUDA 13 base (nvidia/cuda:13.0.3 + torch cu130). comfy/quant_ops.py calls
+#     ck.registry.disable("cuda") when torch.version.cuda < 13, so the int8_convrot
+#     unet and the nvfp4 text encoder fall back to the slow dequant path on cu128.
+#   * A C compiler in the base (gcc + libc6-dev, added to base/Dockerfile 2026-09-22).
+#     The quantized path runs Triton kernels, and Triton compiles a C launcher stub
+#     per kernel at runtime. Symptom on an older base: the MiniMaxH3ImageToVideo node
+#     fails with "Failed to find C compiler. Please specify via CC environment variable".
+#   Build order:
+#     MODEL=base COMFYUI_VERSION=latest bash build.sh
+#     MODEL=minimax-h3-cozy bash build.sh
+#
+# Sampling is fixed by the CozyGPU desktop app (same recipe as opensourcegen / pixel-dream
+# server/models/minimax-h3.js): fl2va: 8-step turbo LoRA @1.0; ref2va: 4-step turbo LoRA
+# @1.0; both res_multistep / simple, BasicGuider (no CFG, no negative prompt), 24 fps,
+# 768p canvas (short edge 768, area <= 768*1344, /32), length on the model's 17k+5 frame
+# grid (124 = ~5 s ... 362 = ~15 s).
+#
+# LICENSE: Comfy-Org/MiniMax-H3 is published under the
+# minimax-h3-community-license-agreement. The Comfy docs state that commercial use
+# of locally generated outputs requires a MiniMax commercial license (sold via
+# Comfy). Operator's responsibility.
+
+model_downloads:
+  # All files are public on Hugging Face — no HUGGINGFACE_ACCESS_TOKEN required.
+  # apply_model_config.py flattens each `filename` to its basename on download;
+  # the app's workflow builder references these basenames. ~67.3 GB total.
+
+  # Diffusion model — fl2va (first/last-frame + text), pruned, int8 convrot. 20.97 GB.
+  # Loaded by core UNETLoader. Comfy-Org: prefer int8_convrot over fp8_scaled on cu130.
+  - source: hf
+    repo_id: Comfy-Org/MiniMax-H3
+    filename: diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors
+    dest: /comfyui/models/diffusion_models/
+
+  # Text encoder — Qwen3-VL 32B, nvfp4 AWQ. 15.69 GB. Loaded by CLIPLoader type=minimax.
+  # (nvfp4 does not require a Blackwell GPU.)
+  - source: hf
+    repo_id: Comfy-Org/MiniMax-H3
+    filename: text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors
+    dest: /comfyui/models/text_encoders/
+
+  # Video VAE (fp16). 5.21 GB.
+  - source: hf
+    repo_id: Comfy-Org/MiniMax-H3
+    filename: vae/minimax_h3_video_vae_fp16.safetensors
+    dest: /comfyui/models/vae/
+
+  # Audio VAE (fp32). 0.61 GB. Decodes the audio half of the joint AV latent.
+  - source: hf
+    repo_id: Comfy-Org/MiniMax-H3
+    filename: vae/minimax_h3_audio_vae_fp32.safetensors
+    dest: /comfyui/models/vae/
+
+  # lightx2v turbo LoRA, 8-step variant (bf16, ComfyUI key layout). 1.96 GB.
+  # Also mirrored at lightx2v/Minimax-h3-Turbo.
+  - source: hf
+    repo_id: Comfy-Org/MiniMax-H3
+    filename: loras/minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors
+    dest: /comfyui/models/loras/
+
+  # Diffusion model — ref2va (reference images/videos/audio + text), pruned, int8
+  # convrot. 20.97 GB. Used by MiniMaxH3ReferenceToVideo (reference-to-video and
+  # multiframe reference); the fl2va file above cannot take references.
+  - source: hf
+    repo_id: Comfy-Org/MiniMax-H3
+    filename: diffusion_models/minimax_h3_ref2va_pruned_int8_convrot.safetensors
+    dest: /comfyui/models/diffusion_models/
+
+  # lightx2v turbo LoRA for the ref2va model, 4-step variant (bf16). 1.96 GB.
+  - source: hf
+    repo_id: Comfy-Org/MiniMax-H3
+    filename: loras/minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16.safetensors
+    dest: /comfyui/models/loras/
+
+output:
+  type: video   # SaveVideo emits under ComfyUI's "videos" history key

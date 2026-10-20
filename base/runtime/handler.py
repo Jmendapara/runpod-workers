@@ -15,7 +15,14 @@ import uuid
 from lib.config import load_model_config
 from lib.comfy_client import ComfyClient
 from lib.collectors import build_collectors
-from lib.inputs import process_inline_images, process_r2_inputs, process_r2_loras, validate_input
+from lib.inputs import (
+    process_inline_images,
+    process_r2_inputs,
+    process_r2_loras,
+    process_volume_inputs,
+    prune_stale_inputs,
+    validate_input,
+)
 from lib.r2 import load_bucket_profiles, make_uploader, resolve_bucket_target
 
 import requests
@@ -51,12 +58,16 @@ def handler(job):
     job_input = job["input"]
     job_id = job["id"]
 
+    # Warm workers keep /comfyui/input between jobs — drop last hour's leftovers.
+    prune_stale_inputs()
+
     validated, error_msg = validate_input(job_input)
     if error_msg:
         return {"error": error_msg}
 
     workflow = validated["workflow"]
     r2_inputs = validated["r2_inputs"]
+    volume_inputs = validated["volume_inputs"]
     images = validated["images"]
     r2_loras = validated["r2_loras"]
     uid = validated.get("uid")
@@ -85,6 +96,14 @@ def handler(job):
         print(f"worker-comfyui - R2 input download failed: {exc}", flush=True)
         traceback.print_exc()
         return {"error": f"Failed to download R2 inputs: {exc}"}
+
+    # CozyGPU volume mode: inputs the desktop app already put on the network volume.
+    try:
+        process_volume_inputs(workflow, volume_inputs)
+    except Exception as exc:
+        print(f"worker-comfyui - Volume input copy failed: {exc}", flush=True)
+        traceback.print_exc()
+        return {"error": f"Failed to process volume inputs: {exc}"}
 
     try:
         process_inline_images(workflow, images)
