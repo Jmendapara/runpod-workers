@@ -300,9 +300,22 @@ the worker only ever touches the mount:
   older than one hour, so warm workers do not accumulate inputs. Files on the volume
   (`cozygpu/inputs`, `cozygpu/outputs`) are the app's to clean up.
 
-Desktop builds use the `-cozy` model variants (`models/qwen-image-2-1-cozy`,
-`models/minimax-h3-cozy`): identical to their siblings minus the NSFW LoRAs.
-`z-image-turbo` ships no NSFW entries, so it is shared as-is.
+Desktop builds use the `-cozy` model variants, one per app model, identical to
+their siblings minus anything the desktop app must never ship:
+
+| Variant | Removed vs the shared image |
+|---|---|
+| `z-image-turbo-cozy` | nothing (adds the CharacterDesign LoRA) |
+| `qwen-image-2-1-cozy` | the three NSFW LoRAs (keeps the tiled-upscale nodes + Restore / Viggle Turbo LoRAs) |
+| `minimax-h3-cozy` | the NSFW Unlocked LoRA (adds fal realism-people) |
+| `krea-2-turbo-cozy` | the NSFW v4.3, Mystic XXX and SNOFS LoRAs |
+| `ltx-2.3-cozy` | the Extend Video and LipDub sets (weights, node packs, post_install) and the full distilled checkpoint — only the T2V / I2V set stays |
+| `ideogram-4-cozy`, `pixel-dit-cozy`, `scail-2-cozy`, `wan-animate-cozy`, `omni-cozy`, `ace-step-1.5-cozy` | nothing — same contents, `-cozy` name so the app pins its own tags |
+
+Build the variants whose shared image is still on the cu128 base with
+`BASE_TAG=2026-07-07-1526-510c57c` (see "Base image compatibility"): every
+`-cozy` variant except `z-image-turbo-cozy`, `qwen-image-2-1-cozy` and
+`minimax-h3-cozy`, which run on the cu130 base.
 
 Unit tests: `python3 tests/test_inputs.py` and `python3 tests/test_collectors_volume.py`.
 

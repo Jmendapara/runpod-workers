@@ -1,0 +1,45 @@
+# CozyGPU desktop variant of pixel-dit: identical to models/pixel-dit (no LoRAs, nothing to strip); the -cozy name keeps
+# the desktop image set consistent and lets the app's catalog pin its own tag.
+name: pixel-dit-cozy
+
+# PiD image upscaler (flux1 / Z-Image family). Single-stage: NVIDIA PiD
+# super-resolves the uploaded image 4x. (Server PIXEL_DIT_PIPELINE=pid-only.)
+#
+# All nodes (PiDConditioning / CLIPLoader type=pixeldit) are CORE ComfyUI as of
+# v0.23.0 (PR #14103). No custom_nodes. REQUIREMENT: base image built with
+# ComfyUI >= v0.23.0:  COMFYUI_VERSION=0.23.0 MODEL=base bash build.sh
+#
+# The 2K vs 4K tier is chosen at request time from the (resized) input's longest edge:
+#   2K  ->  pid_flux1_512_to_2048_4step_bf16.safetensors   (<=512px  -> 2048px)
+#   4K  ->  pid_flux1_1024_to_4096_4step_bf16.safetensors  (>512px   -> 4096px)
+#
+# NOTE: the optional two-stage "FLUX.2-Klein refine -> PiD" pipeline was removed
+# from this worker to keep the image small (faster cold starts). To re-enable it,
+# re-add these downloads and set PIXEL_DIT_PIPELINE=two-stage on the server:
+#   Comfy-Org/flux2-klein: split_files/diffusion_models/flux-2-klein-4b.safetensors -> /comfyui/models/diffusion_models/
+#   Comfy-Org/flux2-klein: split_files/text_encoders/qwen_3_4b.safetensors          -> /comfyui/models/text_encoders/
+#   Comfy-Org/flux2-klein: split_files/vae/flux2-vae.safetensors                    -> /comfyui/models/vae/
+
+model_downloads:
+  # ---------- PiD flux1 super-resolution ----------
+  - source: hf
+    repo_id: Comfy-Org/PixelDiT
+    filename: diffusion_models/pid_flux1_512_to_2048_4step_bf16.safetensors
+    dest: /comfyui/models/diffusion_models/
+  - source: hf
+    repo_id: Comfy-Org/PixelDiT
+    filename: diffusion_models/pid_flux1_1024_to_4096_4step_bf16.safetensors
+    dest: /comfyui/models/diffusion_models/
+  # gemma text encoder (CLIPLoader type=pixeldit) — required for every PiD decode
+  - source: hf
+    repo_id: Comfy-Org/PixelDiT
+    filename: text_encoders/gemma_2_2b_it_elm_bf16.safetensors
+    dest: /comfyui/models/text_encoders/
+  # flux1 / Z-Image VAE (16-ch) — encodes the Klein-refined image for PiD
+  - source: hf
+    repo_id: Comfy-Org/z_image_turbo
+    filename: split_files/vae/ae.safetensors
+    dest: /comfyui/models/vae/
+
+output:
+  type: image

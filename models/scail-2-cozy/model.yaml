@@ -1,0 +1,69 @@
+# CozyGPU desktop variant of scail-2: identical to models/scail-2 (no NSFW assets; nothing removed). Driving video and
+# reference image arrive inline or as volume_inputs (README "CozyGPU volume mode").
+name: scail-2-cozy
+# SCAIL-2 motion-control (Wan 2.1 SCAIL-2). The SCAIL nodes (WanSCAILToVideo,
+# SCAIL2ColoredMask) and the SAM3 nodes (SAM3_VideoTrack) ship with ComfyUI CORE,
+# so the only custom nodes needed are KJNodes, VideoHelperSuite, and Frame-Interpolation (RIFE).
+# Diffusion model is the FULL fp16 safetensors loaded by core UNETLoader (no GGUF).
+# IMPORTANT: requires a ComfyUI that includes the SCAIL nodes (PR Comfy-Org/ComfyUI#14373,
+# merged ~2026-06-09) AND the SAM3 nodes (PR #13408). The base installs ComfyUI via comfy-cli,
+# whose --version takes `latest` (newest stable release) or `nightly` (master HEAD) — NOT a commit
+# SHA. If the deployed base predates these merges (symptom: "Node 'SCAIL2 Colored Mask' not found"),
+# rebuild the base on master, then rebuild this worker:
+#   MODEL=base COMFYUI_VERSION=nightly bash build.sh
+#   MODEL=scail-2 bash build.sh
+custom_nodes:
+  - repo: https://github.com/kijai/ComfyUI-KJNodes              # GetImageRangeFromBatch, ColorMatch (chunk stitch/seam color)
+  - repo: https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite # VHS_LoadVideo, VHS_VideoCombine
+  - repo: https://github.com/Fannovel16/ComfyUI-Frame-Interpolation # RIFE VFI: 16->32 fps
+    extra_pip:
+      - cupy-cuda12x
+
+model_downloads:
+  # All repos below are public — no HUGGINGFACE_ACCESS_TOKEN required.
+  # apply_model_config.py flattens each `filename` to its basename on download;
+  # the embedded workflow (server/models/scail-2-motion-control.js) references these basenames.
+
+  # SCAIL-2 diffusion model — FULL fp16 (32.8GB; loaded by core UNETLoader → models/diffusion_models/).
+  # H100 80GB fits it with headroom and there is no GGUF dequant overhead. The same repo also has
+  # fp8_scaled (17.7GB) and mxfp8 (17.2GB) variants if VRAM or cold-start time ever becomes a concern.
+  - source: hf
+    repo_id: Comfy-Org/SCAIL-2
+    filename: diffusion_models/wan2.1_14B_SCAIL_2_fp16.safetensors
+    dest: /comfyui/models/diffusion_models/
+
+  # SCAIL-2 DPO refinement LoRA (stacked @1.0 with lightx2v in the official template).
+  - source: hf
+    repo_id: Comfy-Org/SCAIL-2
+    filename: loras/wan2.1_SCAIL_2_DPO_lora_bf16.safetensors
+    dest: /comfyui/models/loras/
+
+  # Text encoder, VAE, CLIP vision (repackaged Wan 2.1 bundle).
+  - source: hf
+    repo_id: Comfy-Org/Wan_2.1_ComfyUI_repackaged
+    filename: split_files/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors
+    dest: /comfyui/models/text_encoders/
+  - source: hf
+    repo_id: Comfy-Org/Wan_2.1_ComfyUI_repackaged
+    filename: split_files/vae/wan_2.1_vae.safetensors
+    dest: /comfyui/models/vae/
+  - source: hf
+    repo_id: Comfy-Org/Wan_2.1_ComfyUI_repackaged
+    filename: split_files/clip_vision/clip_vision_h.safetensors
+    dest: /comfyui/models/clip_vision/
+
+  # lightx2v distill LoRA (loaded at strength 0.8 in the workflow).
+  - source: hf
+    repo_id: Kijai/WanVideo_comfy
+    filename: Lightx2v/lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors
+    dest: /comfyui/models/loras/
+
+  # SAM3.1 multiplex checkpoint (loaded by core CheckpointLoaderSimple → checkpoints/).
+  - source: hf
+    repo_id: Comfy-Org/sam3.1
+    filename: checkpoints/sam3.1_multiplex_fp16.safetensors
+    dest: /comfyui/models/checkpoints/
+
+output:
+  type: image+video+gifs
+  vhs_sidecar_filter: true

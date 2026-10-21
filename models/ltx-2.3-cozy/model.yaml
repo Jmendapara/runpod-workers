@@ -1,0 +1,64 @@
+# CozyGPU desktop variant of ltx-2.3: ONLY the "Create video" / "Animate Image" set (text-to-video and
+# image-to-video, server/models/ltx-2-3.js in pixel-dream / opensourcegen). The desktop app never runs
+# Extend Video, LipDub, Eros or Sulphur, so everything those need is left out — the image drops from
+# ~135 GB to the T2V/I2V weights. Removed vs models/ltx-2.3:
+#   * ltx-2.3-22b-distilled.safetensors (full distilled checkpoint; the T2V/I2V graphs run dev + the
+#     distilled LoRA and never load it)
+#   * the whole "V2V Extend" set (gemma fp8, upscaler 1.1, Kijai fp8 transformer, text projection, KJ VAEs, taeltx)
+#   * the whole LipDub set (distilled lora 1.1, IC-LoRA LipDub, Chatterbox VC, Whisper, M2M-100) plus its
+#     three custom node packs (Fill-ChatterBox, Whisper, TranslationNode) and the symlink-models post_install
+# Kept as in models/ltx-2.3: the pinned ComfyUI-LTXVideo (kornia<0.8), KJNodes, VideoHelperSuite, GGUF,
+# WanVideoWrapper, pip_extras sageattention, and the output section. Build it on the same cu128 base the
+# deployed ltx-2.3 image uses (README: BASE_TAG=2026-07-07-1526-510c57c until validated on cu130).
+name: ltx-2.3-cozy
+
+custom_nodes:
+  - repo: https://github.com/Lightricks/ComfyUI-LTXVideo
+    # PINNED (2026-09-26): commit 63a7f34 (2026-09-17) removed the pack's own LTXVAddLatentGuide in favour of
+    # the core node (Comfy-Org/ComfyUI#16176), which ComfyUI 0.27.0 (the July base this image runs) does not
+    # have — an unpinned rebuild on 2026-09-25 silently lost the node and every OSG "extend video" job failed
+    # with "Node 'LTXV Add Latent Guide' not found". aceeae9 (2026-06-30) is the commit the working July
+    # images were built from. Re-evaluate the pin only together with a ComfyUI base bump.
+    ref: aceeae9635f6d493f2893ba3c411a1c36031788a
+    # kornia >= 0.8 removed the `pad` symbol from kornia.geometry.transform.pyramid;
+    # ComfyUI-LTXVideo/pyramid_blending.py still imports it, so the whole package
+    # fails to load and all of its nodes (LTXVAddLatentGuide, LTXVCropGuides, etc.)
+    # never get registered. Pin to the last compatible kornia line.
+    extra_pip:
+      - "kornia<0.8"
+  - repo: https://github.com/kijai/ComfyUI-KJNodes
+  - repo: https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite
+  - repo: https://github.com/city96/ComfyUI-GGUF
+  - repo: https://github.com/kijai/ComfyUI-WanVideoWrapper
+
+pip_extras:
+  - sageattention
+
+model_downloads:
+  # ----- "Create video" / "Animate Image" set -----
+  # The T2V / I2V builders reference ltx-2.3-22b-dev.safetensors as the base checkpoint and apply
+  # ltx-2.3-22b-distilled-lora-384.safetensors on top at strength 0.5 (the "dev + distilled-lora" pattern).
+  - source: hf
+    repo_id: Lightricks/LTX-2.3
+    filename: ltx-2.3-22b-dev.safetensors
+    dest: /comfyui/models/checkpoints/
+  - source: hf
+    repo_id: Lightricks/LTX-2.3
+    filename: ltx-2.3-22b-distilled-lora-384.safetensors
+    dest: /comfyui/models/loras/
+  # Lightricks deleted this file from the repo on 2026-08-10 (commit 6f3520585aa2); pinned to the
+  # last revision that has it so rebuilds stay byte-identical to the deployed images.
+  - source: url
+    url: https://huggingface.co/Lightricks/LTX-2.3/resolve/7caa482d5cd10a2eae6b34cb48f093ebc45a263e/ltx-2.3-spatial-upscaler-x2-1.0.safetensors
+    filename: ltx-2.3-spatial-upscaler-x2-1.0.safetensors
+    dest: /comfyui/models/latent_upscale_models/
+  - source: hf
+    repo_id: Comfy-Org/ltx-2
+    filename: split_files/text_encoders/gemma_3_12B_it_fp4_mixed.safetensors
+    dest: /comfyui/models/text_encoders/
+
+output:
+  # The T2V / I2V graphs end in SaveVideo ("videos"); "gifs" is kept so a VHS_VideoCombine graph would
+  # still be harvested, exactly as the shared ltx-2.3 image does.
+  type: image+video+gifs
+  vhs_sidecar_filter: true

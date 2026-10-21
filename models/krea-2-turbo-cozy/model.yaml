@@ -1,0 +1,75 @@
+# CozyGPU desktop variant of krea-2-turbo: same weights, custom node and build; only the SFW LoRAs.
+# Removed vs models/krea-2-turbo: KNP_000003000 (Krea 2 NSFW v4.3), MysticXXX_KREA2_v3 and snofs_krea_v1_4.
+name: krea-2-turbo-cozy
+
+# Krea 2 OSS Turbo (FP8) text-to-image. CLIPLoader(type=krea2) + UNETLoader are CORE
+# ComfyUI nodes — REQUIRES a base image built with ComfyUI >= 0.25.0 (built-in Krea2
+# support). One custom_node (ConditioningKrea2Rebalance, kept for parity with the shared image; the
+# desktop app never inserts the node) + five baked LoRAs. All three weights are public (no HF token).
+
+custom_nodes:
+  # Per-layer conditioning rebalance for Krea2 (Qwen3-VL taps). torch-only, no extra pip.
+  - repo: https://github.com/nova452/ComfyUI-ConditioningKrea2Rebalance
+
+model_downloads:
+  # Krea-2-Turbo diffusion model (FP8) — AlperKTS/Krea2_FP8 (file at repo root)
+  - source: hf
+    repo_id: AlperKTS/Krea2_FP8
+    filename: krea2_turbo_fp8.safetensors
+    dest: /comfyui/models/diffusion_models/
+
+  # Text encoder — Qwen3-VL 4B fp8 (the CLIPLoader type=krea2 encoder)
+  - source: hf
+    repo_id: Comfy-Org/Qwen3-VL
+    filename: text_encoders/qwen3vl_4b_fp8_scaled.safetensors
+    dest: /comfyui/models/text_encoders/
+
+  # VAE — Qwen-Image VAE
+  - source: hf
+    repo_id: Comfy-Org/Qwen-Image_ComfyUI
+    filename: split_files/vae/qwen_image_vae.safetensors
+    dest: /comfyui/models/vae/
+
+  # ---------- LoRAs (user-selectable; the app injects LoraLoaderModelOnly) ----------
+  # All from Civitai, pinned to a version id so a rebuild never silently picks up
+  # a newer version. Canonical Civitai filenames (the app's KREA_2_LORA_MAP
+  # references them). Civitai downloads require CIVITAI_TOKEN at build time.
+
+  # Realism Engine — Krea 2 v3.1 (model 2688234 / version 3109006)
+  - source: url
+    url: https://civitai.com/api/download/models/3109006
+    filename: realism_engine_krea2_v3.1.safetensors
+    dest: /comfyui/models/loras/
+    auth_header_env: CIVITAI_TOKEN
+
+  # Velvet's Mythic Fantasy Styles — Portrait, Krea 2 (model 599757 / version 3135757)
+  - source: url
+    url: https://civitai.com/api/download/models/3135757
+    filename: Krea2MythP0rtr4itStyle.safetensors
+    dest: /comfyui/models/loras/
+    auth_header_env: CIVITAI_TOKEN
+
+  # Realistic Snapshot — Krea 2 v0.5 (model 2268008 / version 3084537)
+  - source: url
+    url: https://civitai.com/api/download/models/3084537
+    filename: RealisticSnapshotKrea2.safetensors
+    dest: /comfyui/models/loras/
+    auth_header_env: CIVITAI_TOKEN
+
+  # Krea2 - Melancholy v2.0 by zidius — melancholic cinematic realism (model 2747740 / version 3116962).
+  # Trigger word "zidiusArt"; author: strength 0.75 → 2.0.
+  - source: url
+    url: https://civitai.com/api/download/models/3116962
+    filename: Krea_2_zidiusArt_Melancholy_v2.safetensors
+    dest: /comfyui/models/loras/
+    auth_header_env: CIVITAI_TOKEN
+
+  # Aesthetic Amateur Photo — Krea V4 by powerpuff (model 689192 / version 3284331). No trigger word.
+  - source: url
+    url: https://civitai.com/api/download/models/3284331
+    filename: Krea_Amateur_V4.safetensors
+    dest: /comfyui/models/loras/
+    auth_header_env: CIVITAI_TOKEN
+
+output:
+  type: image
