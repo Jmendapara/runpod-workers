@@ -65,11 +65,5 @@ model_downloads:
     auth_header_env: CIVITAI_TOKEN
 
   # Aesthetic Amateur Photo — Krea V4 by powerpuff (model 689192 / version 3284331). No trigger word.
-  - source: url
-    url: https://civitai.com/api/download/models/3284331
-    filename: Krea_Amateur_V4.safetensors
-    dest: /comfyui/models/loras/
-    auth_header_env: CIVITAI_TOKEN
-
 output:
   type: image
