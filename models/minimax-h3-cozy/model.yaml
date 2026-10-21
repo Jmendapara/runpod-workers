@@ -5,6 +5,12 @@
 # (https://docs.comfy.org/tutorials/video/minimax/minimax-h3).
 # Plus fal/MiniMax-H3-Realism-People-LoRA (SFW, trigger r34l1sm) as the built-in realism pick.
 name: minimax-h3-cozy
+# Output frame rate (CozyGPU settings.fps 24/30/50/60, default 30): the model renders 24 fps; higher rates run
+# core FrameInterpolate (RIFE v4.26, x5 -> 120 fps) and then VHS_SelectImages keeps the target-rate frames before
+# CreateVideo. Same pin and weights as models/minimax-h3 (the Pixel Dream image, 59dec0e).
+custom_nodes:
+  - repo: https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite # VHS_SelectImages (frame-rate resample)
+    ref: 4d907bee61e92c2e65af3bd6383a4e4d356126d1                   # 2026-09-02
 model_downloads:
 - source: hf
   repo_id: Comfy-Org/MiniMax-H3
@@ -38,5 +44,10 @@ model_downloads:
   repo_id: fal/MiniMax-H3-Realism-People-LoRA
   filename: h3-realism-people-t2v-i2v-r2v.safetensors
   dest: /comfyui/models/loras/
+# RIFE v4.26 frame interpolation model (22.7 MB, public) for core FrameInterpolationModelLoader.
+- source: hf
+  repo_id: Comfy-Org/frame_interpolation
+  filename: frame_interpolation/rife_v4.26.safetensors
+  dest: /comfyui/models/frame_interpolation/
 output:
   type: video
