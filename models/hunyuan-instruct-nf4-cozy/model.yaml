@@ -1,0 +1,40 @@
+# CozyGPU desktop variant of hunyuan-instruct-nf4 (HunyuanImage 3.0 Instruct Distil NF4): nothing
+# removed (no LoRAs); built from this branch so it carries the CozyGPU volume mode.
+name: hunyuan-instruct-nf4-cozy
+custom_nodes:
+  - repo: https://github.com/EricRollei/Comfy_HunyuanImage3
+    # Pinned to the v1.3.0-era HEAD (Feb 21) that the known-good March prod image
+    # (standalone hunyuan-instruct-nf4-runpod-worker) was built with. The two
+    # commits after it regress this worker: eeaa92ec26 ("moe_drop_tokens +
+    # vae_dtype options") and bf738dba3f ("bucket bypass + seqlen auto-bump for
+    # native-resolution image edits") — with the distilled NF4-v2 checkpoint at
+    # steps=10 they produce under-denoised, artifacted image-edit output and
+    # slower inference. Re-verify quality before ever bumping this pin.
+    ref: e1caeb72f7dd445286c722e97d6c702d35fe7977
+    # Pinned to the versions inside the known-good July image
+    # (jmendapara/hunyuan-instruct-nf4-runpod-worker:2026-07-04-0509-b6a4d9a). Unpinned, a
+    # 2026-09-25 rebuild resolved a huggingface_hub that broke HunyuanInstructLoader
+    # ("cannot import name 'get_cached_repo_tree' from 'huggingface_hub'").
+    extra_pip:
+      - "diffusers==0.39.0"
+      - "transformers==4.57.6"
+      - "bitsandbytes==0.49.2"
+      - "accelerate==1.14.0"
+      - "huggingface_hub==0.36.2"
+      - "tokenizers==0.22.2"
+      - "safetensors==0.8.0"
+model_downloads:
+  # NF4 variant (was MODEL_TYPE=hunyuan-instruct-nf4 in the standalone worker).
+  # Snapshot the full repo; downloaded into the bare-name dir, then the
+  # symlink-nf4-variant.py post_install recreates the -v2 alias the original made.
+  - source: hf-snapshot
+    repo_id: EricRollei/HunyuanImage-3.0-Instruct-Distil-NF4-v2
+    dest: /comfyui/models/HunyuanImage-3.0-Instruct-Distil-NF4
+post_install:
+  - patches/patch-hunyuan-paths.py
+  - patches/symlink-nf4-variant.py
+extra_model_paths_additions:
+  hunyuan: models/
+  hunyuan_instruct: models/
+output:
+  type: image

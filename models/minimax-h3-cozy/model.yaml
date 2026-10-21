@@ -1,5 +1,5 @@
-# CozyGPU desktop variant of minimax-h3: all main weights and both lightx2v turbo LoRAs, built the same way.
-# Removed vs models/minimax-h3: the M3_Unlocked_V2.1 (MiniMax H3 NSFW Unlocked) LoRA.
+# CozyGPU desktop variant of minimax-h3: all main weights and both lightx2v turbo LoRAs, built the same way,
+# plus the M3_Unlocked_V2.1 NSFW LoRA the app auto-applies to explicit prompts (local prompt check, never a pick).
 # MiniMax H3 — text-to-video, first/last-frame image-to-video, reference-to-video
 # and multiframe reference (chained MiniMaxH3AddGuide), all with native stereo audio
 # (https://docs.comfy.org/tutorials/video/minimax/minimax-h3).
@@ -38,5 +38,13 @@ model_downloads:
   repo_id: fal/MiniMax-H3-Realism-People-LoRA
   filename: h3-realism-people-t2v-i2v-r2v.safetensors
   dest: /comfyui/models/loras/
+# MiniMax H3 NSFW Unlocked v2.1 — civitai version 3345855 (164 MB, fp32, mlp.fc1/fc2 only); loads on
+# fl2va and ref2va. Never a pick in CozyGPU: the app chains it after the turbo LoRA at 0.7 when its
+# local prompt check says the prompt is explicit and no LoRA is picked. Author: strength 0.3-1.
+- source: url
+  url: https://civitai.com/api/download/models/3345855
+  filename: M3_Unlocked_V2.1.safetensors
+  dest: /comfyui/models/loras/
+  auth_header_env: CIVITAI_TOKEN
 output:
   type: video
