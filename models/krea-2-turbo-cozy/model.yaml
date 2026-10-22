@@ -10,6 +10,7 @@ name: krea-2-turbo-cozy
 custom_nodes:
   # Per-layer conditioning rebalance for Krea2 (Qwen3-VL taps). torch-only, no extra pip.
   - repo: https://github.com/nova452/ComfyUI-ConditioningKrea2Rebalance
+    ref: 53c147c72c2fbd9444765af87118caee81a26d01   # 2026-09-26, the commit in the working krea-2-turbo-cozy:2026-10-21-0559-c998948 image
 
 model_downloads:
   # Krea-2-Turbo diffusion model (FP8) — AlperKTS/Krea2_FP8 (file at repo root)

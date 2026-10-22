@@ -27,9 +27,13 @@ custom_nodes:
     extra_pip:
       - "kornia<0.8"
   - repo: https://github.com/kijai/ComfyUI-KJNodes
+    ref: f4bae1f9960e5d643573a2ecf7abd56453a21821   # 2026-10-20, the commit in the working ltx-2.3-cozy:2026-10-21-0455-c998948 image
   - repo: https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite
+    ref: 4d907bee61e92c2e65af3bd6383a4e4d356126d1   # 2026-09-02, the commit in the working ltx-2.3-cozy:2026-10-21-0455-c998948 image
   - repo: https://github.com/city96/ComfyUI-GGUF
+    ref: 6ea2651e7df66d7585f6ffee804b20e92fb38b8a   # 2026-01-12, the commit in the working ltx-2.3-cozy:2026-10-21-0455-c998948 image
   - repo: https://github.com/kijai/ComfyUI-WanVideoWrapper
+    ref: 088128b224242e110d3906c6750e9a3a348a659b   # 2026-05-24, the commit in the working ltx-2.3-cozy:2026-10-21-0455-c998948 image
 
 pip_extras:
   - sageattention

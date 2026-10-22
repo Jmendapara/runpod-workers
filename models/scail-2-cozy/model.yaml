@@ -14,8 +14,11 @@ name: scail-2-cozy
 #   MODEL=scail-2 bash build.sh
 custom_nodes:
   - repo: https://github.com/kijai/ComfyUI-KJNodes              # GetImageRangeFromBatch, ColorMatch (chunk stitch/seam color)
+    ref: f4bae1f9960e5d643573a2ecf7abd56453a21821   # 2026-10-20, the commit in the working scail-2-cozy:2026-10-21-0349-2029465 image
   - repo: https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite # VHS_LoadVideo, VHS_VideoCombine
+    ref: 4d907bee61e92c2e65af3bd6383a4e4d356126d1   # 2026-09-02, the commit in the working scail-2-cozy:2026-10-21-0349-2029465 image
   - repo: https://github.com/Fannovel16/ComfyUI-Frame-Interpolation # RIFE VFI: 16->32 fps
+    ref: 26545cc2dd95bc3d27f056016300673bdeee78f5   # 2026-03-29, the commit in the working scail-2-cozy:2026-10-21-0349-2029465 image
     extra_pip:
       - cupy-cuda12x
 

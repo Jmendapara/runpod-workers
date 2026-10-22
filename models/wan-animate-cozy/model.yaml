@@ -3,13 +3,21 @@
 name: wan-animate-cozy
 custom_nodes:
   - repo: https://github.com/kijai/ComfyUI-WanVideoWrapper
+    ref: 088128b224242e110d3906c6750e9a3a348a659b   # 2026-05-24, the commit in the working wan-animate-cozy:2026-10-21-0308-2029465 image
   - repo: https://github.com/kijai/ComfyUI-WanAnimatePreprocess
+    ref: 0e0b6a2a555625acf4d4aefb780e27d06937132f   # 2026-05-27, the commit in the working wan-animate-cozy:2026-10-21-0308-2029465 image
   - repo: https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite
+    ref: 4d907bee61e92c2e65af3bd6383a4e4d356126d1   # 2026-09-02, the commit in the working wan-animate-cozy:2026-10-21-0308-2029465 image
   - repo: https://github.com/kijai/ComfyUI-KJNodes
+    ref: f4bae1f9960e5d643573a2ecf7abd56453a21821   # 2026-10-20, the commit in the working wan-animate-cozy:2026-10-21-0308-2029465 image
   - repo: https://github.com/ltdrdata/ComfyUI-Impact-Pack
+    ref: 429d0159ad429e64d2b3916e6e7be9c22d025c3c   # 2026-04-19, the commit in the working wan-animate-cozy:2026-10-21-0308-2029465 image
   - repo: https://github.com/cubiq/ComfyUI_essentials
+    ref: 9d9f4bedfc9f0321c19faf71855e228c93bd0dc9   # 2025-04-14, the commit in the working wan-animate-cozy:2026-10-21-0308-2029465 image
   - repo: https://github.com/kijai/ComfyUI-segment-anything-2
+    ref: 0c35fff5f382803e2310103357b5e985f5437f32   # 2025-09-28, the commit in the working wan-animate-cozy:2026-10-21-0308-2029465 image
   - repo: https://github.com/Fannovel16/ComfyUI-Frame-Interpolation
+    ref: 26545cc2dd95bc3d27f056016300673bdeee78f5   # 2026-03-29, the commit in the working wan-animate-cozy:2026-10-21-0308-2029465 image
     extra_pip:
       - cupy-cuda12x
 
