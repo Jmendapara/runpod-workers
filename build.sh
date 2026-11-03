@@ -263,14 +263,51 @@ build_base() {
     echo "============================================="
 }
 
+# Build & push a TRAINER image: trainers/<name>/Dockerfile (not a ComfyUI model.yaml
+# worker — no shared base, no weights baked). Context = repo root so the Dockerfile can
+# COPY trainers/<name>/*. The HF token is forwarded as a BuildKit secret like model builds.
+build_trainer() {
+    local name="$1"
+    local dockerfile="trainers/${name}/Dockerfile"
+    local tag="${IMAGE_NAMESPACE}/${name}-runpod-worker:${BUILD_TAG}"
+
+    local secret_args=()
+    if [ -n "${HUGGINGFACE_ACCESS_TOKEN:-}" ]; then
+        secret_args+=(--secret id=hf_token,env=HUGGINGFACE_ACCESS_TOKEN)
+    fi
+
+    echo "[4/5] Building trainer → ${tag} (${dockerfile})"
+    export DOCKER_BUILDKIT=1
+    _build_and_push "${tag}" "." \
+        --platform linux/amd64 \
+        -f "${dockerfile}" \
+        "${secret_args[@]}"
+
+    cat <<EOF
+=============================================
+ ✓ Built$([ -z "${NO_PUSH:-}" ] && echo " and pushed"):
+     ${tag}
+
+ → Update the ${name} RunPod endpoint to use image:
+     ${tag}
+=============================================
+EOF
+}
+
 # Build & push a model image
 build_model() {
     local model="$1"
     local model_dir="models/${model}"
 
+    if [ ! -d "${model_dir}" ] && [ -f "trainers/${model}/Dockerfile" ]; then
+        build_trainer "${model}"
+        return $?
+    fi
     if [ ! -d "${model_dir}" ]; then
         echo "ERROR: ${model_dir} does not exist. Available models:"
         ls -1 models/ | sed 's/^/  • /'
+        echo "Available trainers (trainers/<name>/Dockerfile):"
+        ls -1 trainers/ 2>/dev/null | sed 's/^/  • /'
         return 1
     fi
 
