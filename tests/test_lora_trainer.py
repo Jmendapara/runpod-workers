@@ -9,6 +9,7 @@ import unittest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "trainers", "lora-trainer"))
 
 from trainer_config import (  # noqa: E402
+    pick_output_loras,
     _sample_every, build_config, caption_for, parse_progress_line, previews_ready, slugify, validate_input,
 )
 
@@ -99,6 +100,25 @@ class ValidateInputTests(unittest.TestCase):
         self.assertEqual(spec["sample"]["prompts"], ["a", "b", "c", "d"])
 
 
+class OutputLoraTests(unittest.TestCase):
+    def test_single_file(self):
+        self.assertEqual(pick_output_loras(["job.safetensors", "job_000000500.safetensors", "optimizer.pt"], "job"), [(None, "job.safetensors")])
+
+    def test_two_stage_model_keeps_both(self):
+        names = ["job_high_noise.safetensors", "job_low_noise.safetensors", "job_000000500_high_noise.safetensors"]
+        self.assertEqual(pick_output_loras(names, "job"), [("high", "job_high_noise.safetensors"), ("low", "job_low_noise.safetensors")])
+
+    def test_step_saves_highest_wins(self):
+        self.assertEqual(pick_output_loras(["job_000000500.safetensors", "job_000001000.safetensors"], "job"), [(None, "job_000001000.safetensors")])
+
+    def test_two_stage_step_saves(self):
+        names = ["job_000000500_high_noise.safetensors", "job_000000500_low_noise.safetensors", "job_000001000_high_noise.safetensors", "job_000001000_low_noise.safetensors"]
+        self.assertEqual(pick_output_loras(names, "job"), [("high", "job_000001000_high_noise.safetensors"), ("low", "job_000001000_low_noise.safetensors")])
+
+    def test_nothing(self):
+        self.assertEqual(pick_output_loras(["optimizer.pt"], "job"), [])
+
+
 class BuildConfigTests(unittest.TestCase):
     def test_image_model_config(self):
         spec = validate_input(base_input())
@@ -142,7 +162,8 @@ class BuildConfigTests(unittest.TestCase):
         ds = p["datasets"][0]
         self.assertEqual(ds["num_frames"], 33)
         self.assertEqual(ds["fps"], 16)
-        self.assertTrue(ds["shrink_video_to_frames"])
+        self.assertIs(ds["shrink_video_to_frames"], False)
+        self.assertEqual(p["train"]["optimizer_params"], {"weight_decay": 1e-4})
         self.assertTrue(p["train"]["disable_sampling"])
         self.assertEqual(p["train"]["switch_boundary_every"], 10)
         self.assertTrue(p["train"]["cache_text_embeddings"])

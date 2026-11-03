@@ -31,7 +31,7 @@ import runpod
 import yaml
 
 from r2 import download_to_file, make_client, resolve_bucket_target, upload_file
-from trainer_config import STEP_RE, build_config, caption_for, parse_progress_line, previews_ready, sample_step_of, validate_input
+from trainer_config import STEP_RE, build_config, caption_for, parse_progress_line, pick_output_loras, previews_ready, sample_step_of, validate_input
 
 AI_TOOLKIT_DIR = os.environ.get("AI_TOOLKIT_DIR", "/app/ai-toolkit")
 JOBS_ROOT = os.environ.get("TRAINER_JOBS_ROOT", "/workspace/jobs")
@@ -313,19 +313,35 @@ class ControlPoller:
         return self.cancel
 
 
-def find_output_lora(output_dir: str, name: str) -> str | None:
-    final = os.path.join(output_dir, name, f"{name}.safetensors")
-    if os.path.isfile(final):
-        return final
+def find_output_loras(output_dir: str, name: str) -> list[tuple[str | None, str]]:
+    """(stage, path) for every file the run produced. See trainer_config.pick_output_loras."""
     folder = os.path.join(output_dir, name)
     if not os.path.isdir(folder):
-        return None
-    candidates = [f for f in os.listdir(folder) if f.endswith(".safetensors") and f.startswith(name)]
-    if not candidates:
-        return None
-    # step saves are <name>_000000500.safetensors — highest step wins
-    candidates.sort()
-    return os.path.join(folder, candidates[-1])
+        return []
+    return [(stage, os.path.join(folder, file)) for stage, file in pick_output_loras(os.listdir(folder), name)]
+
+
+def lora_problem(path: str) -> str | None:
+    """Why this LoRA would do nothing or break an image: every output weight zero (ai-toolkit #1046,
+    #1054) or a non-finite weight (#975). A run like that looks fine until someone uses the file."""
+    from safetensors import safe_open
+
+    outputs = 0
+    alive = 0
+    with safe_open(path, framework="pt", device="cpu") as weights:
+        for key in weights.keys():
+            tensor = weights.get_tensor(key).float()
+            if not tensor.isfinite().all():
+                return f"non-finite weights in {key}"
+            if "lora_B" in key or "lora_up" in key:
+                outputs += 1
+                if tensor.abs().max() > 0:
+                    alive += 1
+    if outputs == 0:
+        return "no LoRA weights in the file"
+    if alive == 0:
+        return f"all {outputs} output layers are zero"
+    return None
 
 
 class PreviewUploader:
@@ -471,7 +487,12 @@ def handler(job):
                 "train_seconds": int(time.time() - (progress.train_started or started)),
                 "log_tail": tail[-20:],
             }
-        if rc != 0:
+        output_dir = os.path.join(workdir, "output")
+        lora_paths = find_output_loras(output_dir, spec["name"])
+        # A crash after the final save (usually the last preview) must not throw away a finished LoRA.
+        if rc != 0 and lora_paths and progress.step >= progress.total:
+            log(f"ai-toolkit exited with {rc} after the last step; keeping the saved LoRA")
+        elif rc != 0:
             log(f"ai-toolkit exited with {rc}")
             err_line = next((l for l in reversed(tail) if "Error" in l or "error" in l or "Exception" in l), None)
             code = "oom" if any("out of memory" in l.lower() for l in tail) else "training_failed"
@@ -482,16 +503,24 @@ def handler(job):
                 "log_tail": tail,
             }
 
-        output_dir = os.path.join(workdir, "output")
-        lora_path = find_output_lora(output_dir, spec["name"])
-        if not lora_path:
+        if not lora_paths:
             return {"error": "Training finished but no LoRA file was produced.", "code": "no_output", "log_tail": tail}
+        for _, lora_path in lora_paths:
+            problem = lora_problem(lora_path)
+            if problem:
+                log(f"rejecting {os.path.basename(lora_path)}: {problem}")
+                return {"error": "This training produced a LoRA that would not work, so your credits were refunded. Trying different settings may help.", "code": "bad_lora", "log_tail": [problem, *tail[-20:]]}
 
         progress.set_phase("uploading", "Uploading your LoRA")
         progress.push(force=True)
         prefix = spec["output"]["prefix"]
-        lora_key = prefix + spec["output"]["filename"]
-        lora_bytes = upload_file(client, target.bucket, lora_key, lora_path)
+        stem = os.path.splitext(spec["output"]["filename"])[0]
+        lora_files = []
+        for stage, lora_path in lora_paths:
+            key = f"{prefix}{stem}_{stage}_noise.safetensors" if stage else prefix + spec["output"]["filename"]
+            lora_files.append({"stage": stage, "key": key, "bytes": upload_file(client, target.bucket, key, lora_path)})
+        lora_key = lora_files[-1]["key"]
+        lora_bytes = sum(f["bytes"] for f in lora_files)
         sample_keys = []
         for i, sp in enumerate(find_samples(output_dir, spec["name"])):
             key = f"{prefix}samples/{i}{os.path.splitext(sp)[1].lower()}"
@@ -510,6 +539,7 @@ def handler(job):
         result = {
             "lora_key": lora_key,
             "lora_bytes": lora_bytes,
+            "lora_files": [f for f in lora_files if f["stage"]],
             "sample_keys": sample_keys,
             "previews": progress.previews,
             "steps_completed": progress.total,

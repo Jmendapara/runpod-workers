@@ -171,13 +171,16 @@ def build_config(job: dict, workdir: str) -> dict:
         # Default on (VAE off the GPU during training). A model that reads raw frames from the batch on
         # every step (Wan 2.2 14B i2v: batch.tensor) needs it off — cached latents leave that tensor empty.
         "cache_latents_to_disk": ds.get("cache_latents") is not False,
-        "resolution": [int(ds.get("resolution") or 1024)],
+        # Models that learn better from several sizes send them all; images are never upscaled.
+        "resolution": [int(r) for r in ds["resolutions"]] if ds.get("resolutions") else [int(ds.get("resolution") or 1024)],
         # Video models look for video files when num_frames > 1 (toolkit/config_modules.py).
         "num_frames": num_frames if num_frames > 1 else None,
         "fps": int(ds["fps"]) if has_video and ds.get("fps") else None,
         "do_i2v": bool(ds["do_i2v"]) if has_video and ds.get("do_i2v") is not None else None,
         "do_audio": bool(ds["do_audio"]) if has_video and ds.get("do_audio") is not None else None,
-        "shrink_video_to_frames": True if has_video else None,
+        # Off: a natural-speed window of the clip, instead of squeezing the whole clip into num_frames.
+        # A clip too short for that is still stretched to fit (toolkit/dataloader_mixins.py).
+        "shrink_video_to_frames": False if has_video else None,
     })
 
     sampling_enabled = bool(sample.get("enabled", True)) and bool(sample.get("prompts"))
@@ -214,7 +217,9 @@ def build_config(job: dict, workdir: str) -> dict:
         "skip_first_sample": True,
         "disable_sampling": not sampling_enabled,
         "ema_config": {"use_ema": True, "ema_decay": 0.99} if train.get("ema") else None,
-        "optimizer_params": train.get("optimizer_params"),
+        # ai-toolkit's own UI default; bitsandbytes would otherwise use 0.01.
+        "optimizer_params": train.get("optimizer_params") or {"weight_decay": 1e-4},
+        "min_snr_gamma": train.get("min_snr_gamma"),
         "switch_boundary_every": train.get("switch_boundary_every"),
     })
 
@@ -235,6 +240,7 @@ def build_config(job: dict, workdir: str) -> dict:
         "low_vram": model.get("low_vram"),
         "assistant_lora_path": model.get("assistant_lora_path"),
         "extras_name_or_path": model.get("extras_name_or_path"),
+        "vae_path": model.get("vae_path"),
         "model_kwargs": model.get("model_kwargs"),
     })
 
@@ -268,6 +274,27 @@ def _sample_every(sample: dict, steps: int) -> int:
     except (TypeError, ValueError):
         return steps
     return every if 1 <= every <= steps else steps
+
+
+def pick_output_loras(filenames: list[str], name: str) -> list[tuple[str | None, str]]:
+    """The files a finished run produced, as (stage, filename). One (None, file) for a normal LoRA; a
+    ("high", file) and a ("low", file) for a two-stage model such as Wan 2.2 14B, which needs both."""
+    names = {n for n in filenames if n.endswith(".safetensors") and n.startswith(name)}
+    if f"{name}.safetensors" in names:
+        return [(None, f"{name}.safetensors")]
+    stages = [(stage, f"{name}_{stage}_noise.safetensors") for stage in ("high", "low")]
+    if all(file in names for _, file in stages):
+        return stages
+    # Step saves: <name>_000000500[_high_noise|_low_noise].safetensors. The highest step wins.
+    def step_of(file: str) -> int:
+        match = re.match(rf"{re.escape(name)}_(\d+)", file)
+        return int(match.group(1)) if match else -1
+    best = max((step_of(n) for n in names), default=-1)
+    if best < 0:
+        return []
+    latest = sorted(n for n in names if step_of(n) == best)
+    staged = [("high" if "_high_noise" in n else "low", n) for n in latest if "_high_noise" in n or "_low_noise" in n]
+    return staged if len(staged) == 2 else [(None, latest[-1])]
 
 
 def sample_step_of(filename: str) -> int:
