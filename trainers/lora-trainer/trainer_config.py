@@ -168,7 +168,9 @@ def build_config(job: dict, workdir: str) -> dict:
         "default_caption": ds.get("default_caption") or job.get("trigger_word") or name,
         "caption_dropout_rate": float(ds.get("caption_dropout_rate", 0.05)),
         "shuffle_tokens": False,
-        "cache_latents_to_disk": True,
+        # Default on (VAE off the GPU during training). A model that reads raw frames from the batch on
+        # every step (Wan 2.2 14B i2v: batch.tensor) needs it off — cached latents leave that tensor empty.
+        "cache_latents_to_disk": ds.get("cache_latents") is not False,
         "resolution": [int(ds.get("resolution") or 1024)],
         # Video models look for video files when num_frames > 1 (toolkit/config_modules.py).
         "num_frames": num_frames if num_frames > 1 else None,

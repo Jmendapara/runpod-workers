@@ -148,6 +148,14 @@ class BuildConfigTests(unittest.TestCase):
         self.assertTrue(p["train"]["cache_text_embeddings"])
         self.assertEqual(p["model"]["model_kwargs"], {"train_high_noise": True, "train_low_noise": True})
 
+    def test_latent_cache_defaults_on_and_can_be_turned_off(self):
+        cfg = build_config(validate_input(base_input()), "/w")
+        self.assertTrue(cfg["config"]["process"][0]["datasets"][0]["cache_latents_to_disk"])
+        inp = base_input()
+        inp["dataset"]["cache_latents"] = False
+        cfg = build_config(validate_input(inp), "/w")
+        self.assertFalse(cfg["config"]["process"][0]["datasets"][0]["cache_latents_to_disk"])
+
     def test_sd_models_use_ddpm(self):
         inp = base_input(model={"arch": "sdxl", "name_or_path": "stabilityai/stable-diffusion-xl-base-1.0", "quantize": False})
         inp["sample"]["guidance_scale"] = 6
