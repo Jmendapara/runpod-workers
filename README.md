@@ -87,6 +87,13 @@ python tests/run_smoke.py wan-animate <endpoint-id>
 Smoke inputs live at `tests/smoke/<model>.json` — replace the placeholder
 workflow with a known-good ComfyUI workflow JSON for each model before use.
 
+## Trainers (not ComfyUI workers)
+
+`trainers/<name>/` holds workers with their own `Dockerfile` instead of a `model.yaml` —
+currently `lora-trainer` (ostris/ai-toolkit LoRA training for OpenSourceGen's Train tab, see
+`trainers/lora-trainer/README.md`). Build them the same way: `./tools/remote-build.sh lora-trainer`
+or `MODEL=lora-trainer bash build.sh` (repo-root context, no shared base image).
+
 ## Layout
 
 ```
@@ -97,7 +104,8 @@ models/<name>/
   patches/                  Optional per-model build-time patches
 schema/model.schema.json    JSON Schema for model.yaml (single source of truth)
 tools/validate_yaml.py      Lint runner (also the CI check)
-tests/                      Smoke tests
+tests/                      Smoke tests + trainer unit tests
+trainers/<name>/            Non-ComfyUI workers with their own Dockerfile (lora-trainer)
 build.sh                    The one entrypoint, curl|bash-friendly
 ```
 
