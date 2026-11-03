@@ -58,6 +58,11 @@ RUN pip install --no-cache-dir -U \
     && rm -rf /root/.cache/pip
 
 # Worker runtime deps + the handler.
+# Captions are cached 16 at a time by default, which runs Wan 2.2 14B out of memory on an 80 GB card once a
+# dataset reaches about 16 files. One at a time costs seconds. The grep fails the build if a bump moves the line.
+RUN sed -i 's/^TEXT_EMBED_CACHE_BATCH = 16/TEXT_EMBED_CACHE_BATCH = 1/' toolkit/dataloader_mixins.py && \
+    grep -q '^TEXT_EMBED_CACHE_BATCH = 1 ' toolkit/dataloader_mixins.py
+
 COPY trainers/lora-trainer/requirements.txt /tmp/trainer-requirements.txt
 RUN pip install --no-cache-dir -r /tmp/trainer-requirements.txt && rm /tmp/trainer-requirements.txt
 COPY trainers/lora-trainer/*.py /app/trainer/
