@@ -31,7 +31,7 @@ import runpod
 import yaml
 
 from r2 import download_to_file, make_client, resolve_bucket_target, upload_file
-from trainer_config import STEP_RE, build_config, caption_for, parse_progress_line, validate_input
+from trainer_config import STEP_RE, build_config, caption_for, parse_progress_line, previews_ready, sample_step_of, validate_input
 
 AI_TOOLKIT_DIR = os.environ.get("AI_TOOLKIT_DIR", "/app/ai-toolkit")
 JOBS_ROOT = os.environ.get("TRAINER_JOBS_ROOT", "/workspace/jobs")
@@ -40,6 +40,8 @@ CONTROL_POLL_S = float(os.environ.get("CONTROL_POLL_S", "20"))
 DOWNLOAD_THREADS = int(os.environ.get("DOWNLOAD_THREADS", "8"))
 LOG_TAIL_LINES = 80
 MAX_SAMPLES = 4
+PREVIEW_SCAN_S = 5.0
+PREVIEW_SETTLE_S = 2.0  # a sample file untouched for this long has finished being written
 REFRESH_WORKER = os.environ.get("REFRESH_WORKER", "false").lower() == "true"
 
 
@@ -86,6 +88,16 @@ class Progress:
         self.step_times: deque[tuple[float, int]] = deque(maxlen=50)
         self.last_push = 0.0
         self.last_payload: dict | None = None
+        self.previews: list[dict] = []
+
+    def add_preview(self, step: int, key: str) -> None:
+        with self.lock:
+            entry = next((p for p in self.previews if p["step"] == step), None)
+            if entry is None:
+                entry = {"step": step, "keys": []}
+                self.previews.append(entry)
+                self.previews.sort(key=lambda p: p["step"])
+            entry["keys"].append(key)
 
     def set_phase(self, phase: str, message: str | None = None) -> None:
         with self.lock:
@@ -132,6 +144,7 @@ class Progress:
                 "sec_per_step": round(sps, 3) if sps else None,
                 "loss": self.loss,
                 "message": self.message,
+                "previews": [{"step": p["step"], "keys": list(p["keys"])} for p in self.previews],
                 "updated_at": int(time.time()),
             }
 
@@ -315,6 +328,49 @@ def find_output_lora(output_dir: str, name: str) -> str | None:
     return os.path.join(folder, candidates[-1])
 
 
+class PreviewUploader:
+    """Uploads the samples ai-toolkit renders on the way, as they land on disk, so the app can show
+    them while it trains. A failed upload is logged and retried; it never touches the training."""
+
+    def __init__(self, client, bucket: str, prefix: str, folder: str, progress: Progress):
+        self.client = client
+        self.bucket = bucket
+        self.prefix = prefix
+        self.folder = folder
+        self.progress = progress
+        self.done: set[str] = set()
+        self.counts: dict[int, int] = {}
+        self.last_scan = 0.0
+
+    def scan(self, force: bool = False) -> None:
+        now = time.time()
+        if not force and now - self.last_scan < PREVIEW_SCAN_S:
+            return
+        self.last_scan = now
+        try:
+            names = os.listdir(self.folder)
+        except OSError:
+            return
+        uploaded = False
+        for step, name in previews_ready(names, self.progress.total, self.done):
+            path = os.path.join(self.folder, name)
+            try:
+                if not force and now - os.path.getmtime(path) < PREVIEW_SETTLE_S:
+                    continue
+                index = self.counts.get(step, 0)
+                key = f"{self.prefix}samples/step-{step:06d}-{index}{os.path.splitext(name)[1].lower()}"
+                upload_file(self.client, self.bucket, key, path)
+            except Exception as exc:
+                log(f"preview upload failed ({name}): {exc}")
+                continue
+            self.done.add(name)
+            self.counts[step] = index + 1
+            self.progress.add_preview(step, key)
+            uploaded = True
+        if uploaded:
+            self.progress.push(force=True)
+
+
 def find_samples(output_dir: str, name: str) -> list[str]:
     folder = os.path.join(output_dir, name, "samples")
     if not os.path.isdir(folder):
@@ -323,13 +379,8 @@ def find_samples(output_dir: str, name: str) -> list[str]:
     if not files:
         return []
     # filenames: <time>__<step:09d>_<i>.<ext>; keep the highest step only
-    def step_of(f: str) -> int:
-        try:
-            return int(f.split("__")[1].split("_")[0])
-        except (IndexError, ValueError):
-            return -1
-    best = max(step_of(f) for f in files)
-    picked = sorted(f for f in files if step_of(f) == best)[:MAX_SAMPLES]
+    best = max(sample_step_of(f) for f in files)
+    picked = sorted(f for f in files if sample_step_of(f) == best)[:MAX_SAMPLES]
     return [os.path.join(folder, f) for f in picked]
 
 
@@ -390,6 +441,10 @@ def handler(job):
         trainer = Trainer(config_path, env, progress)
         trainer.start()
         control = ControlPoller(spec["control_url"])
+        previews = PreviewUploader(
+            client, target.bucket, spec["output"]["prefix"],
+            os.path.join(workdir, "output", spec["name"], "samples"), progress,
+        )
 
         cancelled = False
         while True:
@@ -400,9 +455,11 @@ def handler(job):
                 cancelled = True
                 trainer.terminate()
                 break
+            previews.scan()
             progress.push()
             time.sleep(1.0)
         trainer.wait_reader()
+        previews.scan(force=True)
         rc = trainer.poll()
         tail = list(trainer.tail)
 
@@ -454,6 +511,7 @@ def handler(job):
             "lora_key": lora_key,
             "lora_bytes": lora_bytes,
             "sample_keys": sample_keys,
+            "previews": progress.previews,
             "steps_completed": progress.total,
             "train_seconds": train_seconds,
             "total_seconds": int(time.time() - started),

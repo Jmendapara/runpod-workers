@@ -183,7 +183,7 @@ def build_config(job: dict, workdir: str) -> dict:
     sampling_enabled = bool(sample.get("enabled", True)) and bool(sample.get("prompts"))
     sample_cfg = _clean({
         "sampler": sample.get("sampler") or ("ddpm" if model["arch"] in ("sdxl", "sd15", "sd1") else "flowmatch"),
-        "sample_every": steps,          # only at the end (+ skip_first_sample below)
+        "sample_every": _sample_every(sample, steps),  # sample.every, else only at the end (+ skip_first_sample below)
         "sample_start_step": 0,
         "width": int(sample.get("width") or 1024),
         "height": int(sample.get("height") or 1024),
@@ -260,6 +260,35 @@ def build_config(job: dict, workdir: str) -> dict:
 
 
 # Caption files -----------------------------------------------------------------------------------
+
+def _sample_every(sample: dict, steps: int) -> int:
+    """How often ai-toolkit renders samples. Anything unusable falls back to only at the end."""
+    try:
+        every = int(sample.get("every") or steps)
+    except (TypeError, ValueError):
+        return steps
+    return every if 1 <= every <= steps else steps
+
+
+def sample_step_of(filename: str) -> int:
+    """The step in ai-toolkit's sample filename: <time>__<step:09d>_<i>.<ext>. -1 if it has none."""
+    try:
+        return int(filename.split("__")[1].split("_")[0])
+    except (IndexError, ValueError):
+        return -1
+
+
+def previews_ready(filenames: list[str], total_steps: int, already_done: set[str]) -> list[tuple[int, str]]:
+    """Samples rendered before the final step that have not been uploaded yet, oldest first."""
+    ready = []
+    for name in filenames:
+        if name in already_done or not name.lower().endswith((".jpg", ".jpeg", ".png", ".webp")):
+            continue
+        step = sample_step_of(name)
+        if 0 < step < total_steps:
+            ready.append((step, name))
+    return sorted(ready)
+
 
 def caption_for(item: dict, trigger_word: str | None, default_caption: str | None) -> str:
     """The caption written next to a dataset file. The trigger word is always present

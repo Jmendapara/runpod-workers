@@ -9,7 +9,7 @@ import unittest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "trainers", "lora-trainer"))
 
 from trainer_config import (  # noqa: E402
-    build_config, caption_for, parse_progress_line, slugify, validate_input,
+    _sample_every, build_config, caption_for, parse_progress_line, previews_ready, slugify, validate_input,
 )
 
 
@@ -147,6 +147,23 @@ class BuildConfigTests(unittest.TestCase):
         self.assertEqual(p["train"]["switch_boundary_every"], 10)
         self.assertTrue(p["train"]["cache_text_embeddings"])
         self.assertEqual(p["model"]["model_kwargs"], {"train_high_noise": True, "train_low_noise": True})
+
+    def test_sample_every(self):
+        self.assertEqual(_sample_every({"every": 500}, 1000), 500)
+        self.assertEqual(_sample_every({}, 1000), 1000)
+        self.assertEqual(_sample_every({"every": 5000}, 1000), 1000)
+        self.assertEqual(_sample_every({"every": "x"}, 1000), 1000)
+
+    def test_previews_ready_skips_final_done_and_other_files(self):
+        names = [
+            "1700000000__000000500_0.jpg",
+            "1700000100__000001000_0.jpg",
+            "1700000000__000000500_1.png",
+            "notes.txt",
+            "1700000000__000000250_0.jpg",
+        ]
+        ready = previews_ready(names, 1000, {"1700000000__000000250_0.jpg"})
+        self.assertEqual(ready, [(500, "1700000000__000000500_0.jpg"), (500, "1700000000__000000500_1.png")])
 
     def test_latent_cache_defaults_on_and_can_be_turned_off(self):
         cfg = build_config(validate_input(base_input()), "/w")
