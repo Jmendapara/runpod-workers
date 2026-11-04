@@ -279,7 +279,9 @@ class Trainer:
         phase = parsed.get("phase")
         if phase == "sampling":
             self.progress.set_phase("sampling", text[:160])
-        elif phase == "saving":
+        elif phase == "saving" and self.progress.step >= self.progress.total:
+            # Saves happen all through a run now, and "Saving" also shows up while loading. Only the last one
+            # means it's nearly done.
             self.progress.set_phase("uploading", text[:160])
         elif phase in ("loading", "caching") and self.progress.phase in ("preparing", "loading", "caching"):
             self.progress.set_phase(phase, text[:160])
