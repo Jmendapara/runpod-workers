@@ -1,0 +1,4 @@
+runpod~=1.7.12
+boto3
+requests
+PyYAML
