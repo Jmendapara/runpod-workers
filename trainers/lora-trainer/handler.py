@@ -32,7 +32,7 @@ import yaml
 
 from r2 import download_to_file, make_client, resolve_bucket_target, upload_file
 from run_log import RunLog, url_secrets
-from trainer_config import STEP_RE, build_config, caption_for, parse_progress_line, pick_output_loras, previews_ready, sample_step_of, validate_input
+from trainer_config import checkpoints_ready, STEP_RE, build_config, caption_for, parse_progress_line, pick_output_loras, previews_ready, sample_step_of, validate_input
 
 AI_TOOLKIT_DIR = os.environ.get("AI_TOOLKIT_DIR", "/app/ai-toolkit")
 JOBS_ROOT = os.environ.get("TRAINER_JOBS_ROOT", "/workspace/jobs")
@@ -43,6 +43,7 @@ LOG_TAIL_LINES = 80
 MAX_SAMPLES = 4
 PREVIEW_SCAN_S = 5.0
 PREVIEW_SETTLE_S = 2.0  # a sample file untouched for this long has finished being written
+CHECKPOINT_SETTLE_S = 5.0  # the same for a saved LoRA, which is much bigger
 REFRESH_WORKER = os.environ.get("REFRESH_WORKER", "false").lower() == "true"
 
 
@@ -100,6 +101,12 @@ class Progress:
         self.last_push = 0.0
         self.last_payload: dict | None = None
         self.previews: list[dict] = []
+        self.checkpoints: list[dict] = []
+
+    def add_checkpoint(self, step: int, files: list[dict]) -> None:
+        with self.lock:
+            self.checkpoints.append({"step": step, "files": files})
+            self.checkpoints.sort(key=lambda c: c["step"])
 
     def add_preview(self, step: int, key: str) -> None:
         with self.lock:
@@ -156,6 +163,7 @@ class Progress:
                 "loss": self.loss,
                 "message": self.message,
                 "previews": [{"step": p["step"], "keys": list(p["keys"])} for p in self.previews],
+                "checkpoints": list(self.checkpoints),
                 "worker_id": WORKER_ID,
                 "gpu": self.gpu,
                 "updated_at": int(time.time()),
@@ -407,6 +415,70 @@ class PreviewUploader:
             self.progress.push(force=True)
 
 
+class CheckpointUploader:
+    """Uploads each step's LoRA as soon as ai-toolkit saves it, so it can be downloaded while the run goes
+    on. These files are big, so it works on its own thread and the progress and cancel checks keep running.
+    A failed upload is logged and retried; it never touches the training."""
+
+    def __init__(self, client, bucket: str, prefix: str, folder: str, name: str, progress: Progress):
+        self.client = client
+        self.bucket = bucket
+        self.prefix = prefix
+        self.folder = folder
+        self.name = name
+        self.progress = progress
+        self.queued: set[int] = set()
+        self.pool = ThreadPoolExecutor(max_workers=1)
+        self.last_scan = 0.0
+
+    def scan(self, force: bool = False) -> None:
+        now = time.time()
+        if not force and now - self.last_scan < PREVIEW_SCAN_S:
+            return
+        self.last_scan = now
+        try:
+            names = os.listdir(self.folder)
+        except OSError:
+            return
+        for step, files in checkpoints_ready(names, self.name, self.progress.total, self.queued):
+            paths = [(stage, os.path.join(self.folder, file)) for stage, file in files]
+            try:
+                if not force and any(now - os.path.getmtime(path) < CHECKPOINT_SETTLE_S for _, path in paths):
+                    continue
+            except OSError:
+                continue
+            self.queued.add(step)
+            self.pool.submit(self._upload, step, paths)
+
+    def _upload(self, step: int, paths: list[tuple[str | None, str]]) -> None:
+        try:
+            for _, path in paths:
+                problem = lora_problem(path)
+                if problem:
+                    log(f"not offering the step {step} file: {problem}")
+                    return
+            uploaded = []
+            for stage, path in paths:
+                suffix = f"_{stage}_noise" if stage else ""
+                key = f"{self.prefix}checkpoints/step-{step:06d}{suffix}.safetensors"
+                uploaded.append({"stage": stage, "key": key, "bytes": upload_file(self.client, self.bucket, key, path)})
+        except Exception as exc:
+            log(f"step {step} file upload failed, will retry: {exc}")
+            self.queued.discard(step)
+            return
+        self.progress.add_checkpoint(step, uploaded)
+        log(f"step {step} file ready: {sum(f['bytes'] for f in uploaded)} bytes")
+
+    def finish(self) -> None:
+        """The run is over: send what's left and wait for it."""
+        self.scan(force=True)
+        self.pool.shutdown(wait=True)
+
+    def stop(self) -> None:
+        """Cancelled or crashing: let the file in flight finish and start no more."""
+        self.pool.shutdown(wait=True, cancel_futures=True)
+
+
 def find_samples(output_dir: str, name: str) -> list[str]:
     folder = os.path.join(output_dir, name, "samples")
     if not os.path.isdir(folder):
@@ -448,6 +520,7 @@ def train(job, run):
     started = run["started"]
     workdir = None
     trainer: Trainer | None = None
+    checkpoints: CheckpointUploader | None = None
     try:
         try:
             spec = validate_input(job_input)
@@ -512,6 +585,11 @@ def train(job, run):
             os.path.join(workdir, "output", spec["name"], "samples"), progress,
         )
 
+        checkpoints = CheckpointUploader(
+            client, target.bucket, spec["output"]["prefix"],
+            os.path.join(workdir, "output", spec["name"]), spec["name"], progress,
+        )
+
         cancelled = False
         while True:
             rc = trainer.poll()
@@ -522,11 +600,16 @@ def train(job, run):
                 trainer.terminate()
                 break
             previews.scan()
+            checkpoints.scan()
             progress.push()
             run_log.upload()
             time.sleep(1.0)
         trainer.wait_reader()
         previews.scan(force=True)
+        if cancelled:
+            checkpoints.stop()
+        else:
+            checkpoints.finish()
         rc = trainer.poll()
         tail = list(trainer.tail)
 
@@ -593,6 +676,7 @@ def train(job, run):
             "lora_files": [f for f in lora_files if f["stage"]],
             "sample_keys": sample_keys,
             "previews": progress.previews,
+            "checkpoints": progress.checkpoints,
             "steps_completed": progress.total,
             "train_seconds": train_seconds,
             "total_seconds": int(time.time() - started),
@@ -613,6 +697,8 @@ def train(job, run):
     finally:
         if trainer:
             trainer.terminate(grace_s=5)
+        if checkpoints:
+            checkpoints.stop()
         if workdir:
             shutil.rmtree(workdir, ignore_errors=True)  # datasets are personal — never keep them on the worker
 

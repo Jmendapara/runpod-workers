@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "trainers", "lo
 
 from run_log import RunLog, url_secrets  # noqa: E402
 from trainer_config import (  # noqa: E402
+    checkpoints_ready,
     pick_output_loras,
     _sample_every, build_config, caption_for, parse_progress_line, previews_ready, slugify, validate_input,
 )
@@ -247,6 +248,45 @@ class ProgressParseTests(unittest.TestCase):
         self.assertEqual(slugify("My Dog Rex!!"), "my-dog-rex")
         self.assertEqual(slugify("   "), "lora")
         self.assertEqual(slugify("a" * 100), "a" * 48)
+
+
+class CheckpointTests(unittest.TestCase):
+    def test_saves_at_the_requested_interval_and_keeps_every_file(self):
+        job = validate_input(base_input(train={"steps": 1000, "lr": 1e-4, "rank": 16, "save_every": 250}))
+        save = build_config(job, "/tmp/w")["config"]["process"][0]["save"]
+        self.assertEqual(save["save_every"], 250)
+        self.assertGreaterEqual(save["max_step_saves_to_keep"], 1000 // 250)
+
+    def test_an_unusable_interval_means_only_at_the_end(self):
+        for bad in ("soon", 0, -5, 5000):
+            job = validate_input(base_input(train={"steps": 1000, "lr": 1e-4, "rank": 16, "save_every": bad}))
+            self.assertEqual(build_config(job, "/tmp/w")["config"]["process"][0]["save"]["save_every"], 1000)
+
+    def test_finds_step_files_oldest_first_and_skips_the_rest(self):
+        names = [
+            "rex_000000500.safetensors", "rex_000000250.safetensors", "rex.safetensors", "rex_000001000.safetensors",
+            "optimizer.pt", "other_000000250.safetensors", "rex_000000250.safetensors.tmp",
+        ]
+        self.assertEqual(checkpoints_ready(names, "rex", 1000, set()), [
+            (250, [(None, "rex_000000250.safetensors")]),
+            (500, [(None, "rex_000000500.safetensors")]),
+        ])
+
+    def test_skips_what_is_already_done(self):
+        names = ["rex_000000250.safetensors", "rex_000000500.safetensors"]
+        self.assertEqual(checkpoints_ready(names, "rex", 1000, {250}), [(500, [(None, "rex_000000500.safetensors")])])
+
+    def test_a_two_stage_step_needs_both_files(self):
+        names = ["rex_000000250_high_noise.safetensors", "rex_000000250_low_noise.safetensors", "rex_000000500_high_noise.safetensors"]
+        self.assertEqual(checkpoints_ready(names, "rex", 1000, set()), [
+            (250, [("high", "rex_000000250_high_noise.safetensors"), ("low", "rex_000000250_low_noise.safetensors")]),
+        ])
+
+    def test_the_final_file_still_wins_with_step_files_around(self):
+        names = ["rex_000000250.safetensors", "rex_000000500.safetensors", "rex.safetensors"]
+        self.assertEqual(pick_output_loras(names, "rex"), [(None, "rex.safetensors")])
+        wan = ["rex_000000250_high_noise.safetensors", "rex_000000250_low_noise.safetensors", "rex_high_noise.safetensors", "rex_low_noise.safetensors"]
+        self.assertEqual(pick_output_loras(wan, "rex"), [("high", "rex_high_noise.safetensors"), ("low", "rex_low_noise.safetensors")])
 
 
 class RunLogTests(unittest.TestCase):

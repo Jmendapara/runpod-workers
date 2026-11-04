@@ -251,7 +251,8 @@ def build_config(job: dict, workdir: str) -> dict:
         "trigger_word": job.get("trigger_word"),
         "performance_log_every": 0,
         "network": network_cfg,
-        "save": {"dtype": "float16", "save_every": steps, "max_step_saves_to_keep": 1, "push_to_hub": False},
+        # Every step's file is kept until the handler has uploaded it, so ai-toolkit must not prune any.
+        "save": {"dtype": "float16", "save_every": _save_every(job["train"], steps), "max_step_saves_to_keep": 1000, "push_to_hub": False},
         "datasets": [dataset_cfg],
         "train": train_cfg,
         "model": model_cfg,
@@ -274,6 +275,36 @@ def _sample_every(sample: dict, steps: int) -> int:
     except (TypeError, ValueError):
         return steps
     return every if 1 <= every <= steps else steps
+
+
+def _save_every(train: dict, steps: int) -> int:
+    """How often ai-toolkit saves the LoRA. Anything unusable falls back to only at the end."""
+    try:
+        every = int(train.get("save_every") or steps)
+    except (TypeError, ValueError):
+        return steps
+    return every if 1 <= every <= steps else steps
+
+
+def checkpoints_ready(filenames: list[str], name: str, total_steps: int, already_done: set[int]) -> list[tuple[int, list[tuple[str | None, str]]]]:
+    """The step saves not uploaded yet, oldest first, as (step, [(stage, filename)]). A two-stage model
+    such as Wan 2.2 14B saves a high and a low file per step, and one without the other isn't ready."""
+    pattern = re.compile(rf"^{re.escape(name)}_(\d+)(?:_(high|low)_noise)?\.safetensors$")
+    by_step: dict[int, dict[str | None, str]] = {}
+    for file in filenames:
+        match = pattern.match(file)
+        if not match:
+            continue
+        step = int(match.group(1))
+        if step not in already_done and 0 < step < total_steps:
+            by_step.setdefault(step, {})[match.group(2)] = file
+    ready = []
+    for step, files in sorted(by_step.items()):
+        if None in files:
+            ready.append((step, [(None, files[None])]))
+        elif "high" in files and "low" in files:
+            ready.append((step, [("high", files["high"]), ("low", files["low"])]))
+    return ready
 
 
 def pick_output_loras(filenames: list[str], name: str) -> list[tuple[str | None, str]]:
