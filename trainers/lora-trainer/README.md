@@ -22,6 +22,9 @@ Tag pushed: `jmendapara/lora-trainer-runpod-worker:YYYY-MM-DD-HHMM-<sha>`.
 - GPU pools: 80 GB class first (H100 80GB, RTX PRO 6000 96GB, A100 80GB). Every catalog model is sized
   for 80 GB with fp8 / int8 weights; the 14B video models need it.
 - Container disk: 200 GB when NO network volume is attached (the HF cache lives there); 60 GB with one.
+  All the catalog's models together don't fit in 200 GB, so before each job the handler removes the models
+  used longest ago until 120 GB is free (`TRAINER_MIN_FREE_GB`, `hf_cache.py`). A worker whose job still
+  runs out of disk asks to be replaced, since it would fail every job it picks up next.
 - Network volume: 300–500 GB STANDARD, `/runpod-volume`. Pins the endpoint to the volume's data center.
 - Workers min 0 / max 2–3. FlashBoot off (the image is ~25 GB and there is nothing to keep warm).
 - Execution timeout: the server sends `policy.executionTimeout` per job (3× the estimate + 30 min, capped at

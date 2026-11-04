@@ -30,6 +30,7 @@ import requests
 import runpod
 import yaml
 
+from hf_cache import DEFAULT_MIN_FREE_GB, make_room
 from r2 import download_to_file, make_client, resolve_bucket_target, upload_file
 from run_log import RunLog, url_secrets
 from trainer_config import checkpoints_ready, STEP_RE, build_config, caption_for, parse_progress_line, pick_output_loras, previews_ready, sample_step_of, validate_input
@@ -45,6 +46,7 @@ PREVIEW_SCAN_S = 5.0
 PREVIEW_SETTLE_S = 2.0  # a sample file untouched for this long has finished being written
 CHECKPOINT_SETTLE_S = 5.0  # the same for a saved LoRA, which is much bigger
 REFRESH_WORKER = os.environ.get("REFRESH_WORKER", "false").lower() == "true"
+MIN_FREE_GB = float(os.environ.get("TRAINER_MIN_FREE_GB", DEFAULT_MIN_FREE_GB))
 
 
 STEP_LOG_EVERY = 100
@@ -570,6 +572,12 @@ def train(job, run):
         env = dict(os.environ)
         env["HF_HOME"] = hf_home()
         os.makedirs(env["HF_HOME"], exist_ok=True)
+        # A network volume is shared with workers that may be reading from it, so only a worker's own disk is cleared.
+        if not env["HF_HOME"].startswith("/runpod-volume"):
+            try:
+                make_room(env["HF_HOME"], MIN_FREE_GB, [spec["model"]["name_or_path"], spec["model"].get("extras_name_or_path")], log)
+            except Exception as exc:
+                log(f"disk: could not make room: {exc}")
         env["PYTHONUNBUFFERED"] = "1"
         env.setdefault("TQDM_MININTERVAL", "2")
         if spec["hf_token"]:
@@ -632,12 +640,16 @@ def train(job, run):
             log(f"ai-toolkit exited with {rc}")
             err_line = next((l for l in reversed(tail) if "Error" in l or "error" in l or "Exception" in l), None)
             code = "oom" if any("out of memory" in l.lower() for l in tail) else "training_failed"
-            return {
+            failed = {
                 "error": (err_line or f"Training process exited with code {rc}")[:500],
                 "code": code,
                 "steps_completed": progress.step,
                 "log_tail": tail,
             }
+            # A worker with a full disk would fail every job it picks up next, so it asks to be replaced.
+            if any("no space left on device" in l.lower() for l in tail):
+                failed["refresh_worker"] = True
+            return failed
 
         if not lora_paths:
             return {"error": "Training finished but no LoRA file was produced.", "code": "no_output", "log_tail": tail}
