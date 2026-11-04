@@ -60,15 +60,16 @@ Input (`input`):
 
 Progress (`runpod.serverless.progress_update`, visible as `output` on `/status` while IN_PROGRESS):
 `{ phase: preparing|loading|caching|training|sampling|uploading, step, total_steps, pct, elapsed_s, eta_s,
-sec_per_step, loss, message }`.
+sec_per_step, loss, message, worker_id, gpu, previews[] }`.
 
 Result: `{ lora_key, lora_bytes, sample_keys[], steps_completed, train_seconds, total_seconds, warmup_seconds,
 sec_per_step, final_loss, gpu, dataset }`, or `{ cancelled: true, steps_completed, train_seconds }`, or
-`{ error, code: invalid_input|storage_not_configured|dataset_download_failed|training_failed|oom|no_output|internal,
-log_tail[] }`.
+`{ error, code: invalid_input|storage_not_configured|dataset_download_failed|training_failed|oom|no_output|bad_lora|internal,
+log_tail[] }`. Every result also carries `worker_id`, `gpu`, `phase`, `total_seconds` and, once storage is reachable, `log_key`.
 
 Output layout in R2: `<prefix><filename>` (the LoRA, fp16 safetensors), `<prefix>samples/<n>.jpg` (final-step
-previews, image models only), `<prefix>config.yaml` (the exact ai-toolkit config, for support).
+previews, image models only), `<prefix>config.yaml` (the exact ai-toolkit config, for support), `<prefix>logs/run.log` (the run's whole log, uploaded
+every 2 minutes and at the end, with the HF token and control URL redacted, so it survives a crash and the worker).
 
 ## Tests
 
