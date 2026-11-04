@@ -138,6 +138,7 @@ curl -fsSL .../build.sh | CUDA_BASE_IMAGE=nvidia/cuda:12.8.1-cudnn-runtime-ubunt
 | `qwen-image-2-1` | cu130 base `2026-09-22-0516-9e98cc5` or later | Needs ComfyUI >= 0.37.0 (`TextEncodeQwenImage21` / `QwenImage21Cache`, released 2026-09-21). int8_convrot weights need CUDA 13 for the comfy-kitchen kernels; on cu128 they hit the slow dequant fallback |
 | `minimax-h3` | cu130 base built from a Dockerfile that installs `gcc` + `libc6-dev` (2026-09-22 or later) | Needs ComfyUI >= 0.30.0. Triton JIT-compiles kernel launchers at runtime; without a C compiler the MiniMax node fails with "Failed to find C compiler" |
 | `scail-2` | **pin `BASE_TAG=2026-07-07-1526-510c57c`** until validated on cu130 | `extra_pip: cupy-cuda12x` → needs `cupy-cuda13x` on a cu130 base |
+| `wan-2-2-video` | cu130 base | All nodes are ComfyUI core (`WanImageToVideo`, `FrameInterpolate`, `SaveVideo`). Separate from `wan-animate` |
 | `wan-animate` | **pin `BASE_TAG=2026-07-07-1526-510c57c`** until validated on cu130 | `onnxruntime-gpu` is pinned for CUDA 12.8 (commit 17d0400); needs a CUDA 13 build |
 | `ltx-2.3` | **pin `BASE_TAG=2026-07-07-1526-510c57c`** until validated on cu130 | `pip_extras: sageattention` untested against torch cu130 |
 | everything else | untested on cu130 — pin the old tag until rebuilt + smoke-tested | |
@@ -179,6 +180,17 @@ tools/remote-build.sh       Build on the Hetzner box from your laptop (see above
 tests/                      Smoke tests
 build.sh                    The one entrypoint, curl|bash-friendly
 ```
+
+## wan-2-2-video endpoint sizing
+
+Image-to-video: Wan 2.2 14B high + low noise fp8 (14.3 GB each), lightx2v speed LoRAs, text encoder,
+VAE, RIFE, and the WAN General NSFW LoRA pair. The pair is baked in but pixel-dream never applies it.
+42.5 GB compressed. Suggested RunPod serverless settings: 80 GB GPU pool, 100 GB disk, 1200 s
+execution timeout, `minCudaVersion` 13.0.
+
+Measured on the 80 GB pool at 720x960 (10 steps, 2026-11-04): 49 frames 68 s, 81 frames + RIFE x2
+148 s (first job on the worker, so including model load), 129 frames + RIFE x3 326 s. First pull on
+a fresh endpoint about 12.5 min.
 
 ## minimax-h3 endpoint sizing
 

@@ -4,7 +4,8 @@ name: wan-2-2-video
 # UNETLoader, LoraLoaderModelOnly, ModelSamplingSD3, CLIPLoader type=wan, VAELoader,
 # WanImageToVideo, KSamplerAdvanced (two passes), VAEDecode, FrameInterpolate, CreateVideo,
 # SaveVideo. Graph built by pixel-dream server/models/wan-2-2-video.js. Renders 16 fps;
-# RIFE takes it to 32 / 48 fps. Size class: about 50 GB with the base; 48 GB GPU pool.
+# RIFE takes it to 32 / 48 fps. Size class: about 50 GB with the base; runs on the 80 GB GPU pool.
+# The NSFW pair below is baked in for later use; pixel-dream never applies it (owner 2026-11-04).
 #
 # LICENSE: the Civitai LoRA pair lists commercial use as "RentCivit" only (Civitai's own
 # generator). Operator's responsibility before this reaches production.
