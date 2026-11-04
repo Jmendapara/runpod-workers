@@ -31,7 +31,7 @@ import runpod
 import yaml
 
 from r2 import download_to_file, make_client, resolve_bucket_target, upload_file
-from run_log import RunLog
+from run_log import RunLog, url_secrets
 from trainer_config import STEP_RE, build_config, caption_for, parse_progress_line, pick_output_loras, previews_ready, sample_step_of, validate_input
 
 AI_TOOLKIT_DIR = os.environ.get("AI_TOOLKIT_DIR", "/app/ai-toolkit")
@@ -328,7 +328,8 @@ class ControlPoller:
                     self.cancel = True
                     log("cancel requested by the server")
         except Exception as exc:
-            log(f"control poll failed (ignored): {exc}")
+            # Not the message: it quotes the URL, token included, and this also goes to RunPod's logs.
+            log(f"control poll failed (ignored): {type(exc).__name__}")
         return self.cancel
 
 
@@ -471,7 +472,7 @@ def train(job, run):
         run_log = RunLog(
             os.path.join(JOBS_ROOT, f"{spec['training_id']}.log"), log_key,
             lambda path: upload_file(client, target.bucket, log_key, path, "text/plain"),
-            secrets=[spec["hf_token"], spec["control_url"]],
+            secrets=[spec["hf_token"], *url_secrets(spec["control_url"])],
         )
         log(f"job={job_id} training={spec['training_id']} worker={WORKER_ID} gpu={progress.gpu} "
             f"arch={spec['model']['arch']} items={len(spec['dataset']['items'])} steps={spec['train']['steps']} "

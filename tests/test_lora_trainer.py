@@ -9,7 +9,7 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "trainers", "lora-trainer"))
 
-from run_log import RunLog  # noqa: E402
+from run_log import RunLog, url_secrets  # noqa: E402
 from trainer_config import (  # noqa: E402
     pick_output_loras,
     _sample_every, build_config, caption_for, parse_progress_line, previews_ready, slugify, validate_input,
@@ -265,6 +265,15 @@ class RunLogTests(unittest.TestCase):
         self.assertIn("token [redacted] and [redacted] here", self.uploads[0])
         self.assertNotIn("hf_secret", self.uploads[0])
         self.assertNotIn("abc", self.uploads[0])
+
+    def test_hides_a_url_token_when_an_error_quotes_only_the_path(self):
+        url = "https://x.test/api/lora-training-control/tr_a?token=abc123"
+        log = self.make(secrets=url_secrets(url))
+        log.write("Max retries exceeded with url: /api/lora-training-control/tr_a?token=abc123 (Caused by ...)")
+        log.write(f"failed to reach {url}")
+        log.upload(force=True)
+        self.assertNotIn("abc123", self.uploads[0])
+        self.assertEqual(url_secrets(None), [])
 
     def test_uploads_on_a_schedule_and_only_when_there_is_something_new(self):
         log = self.make(every_s=120)

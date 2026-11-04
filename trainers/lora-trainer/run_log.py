@@ -6,9 +6,18 @@ Uploading every couple of minutes means even a hard crash leaves nearly everythi
 import os
 import threading
 import time
+from urllib.parse import parse_qs, urlparse
 
 UPLOAD_EVERY_S = 120
 MAX_BYTES = 20 * 1024 * 1024
+
+
+def url_secrets(url):
+    """What to hide for a URL with a token in it. Errors often quote only its path and query."""
+    if not url:
+        return []
+    values = [v for vs in parse_qs(urlparse(url).query).values() for v in vs]
+    return [url, *values]
 
 
 class RunLog:
