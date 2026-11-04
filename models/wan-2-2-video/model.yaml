@@ -1,0 +1,62 @@
+name: wan-2-2-video
+# Wan 2.2 14B image-to-video (high + low noise fp8), the NSFW LoRA pair and RIFE smoothing.
+# Separate from `wan-animate` (motion control only, CUDA 12.8 base). ALL nodes are ComfyUI CORE:
+# UNETLoader, LoraLoaderModelOnly, ModelSamplingSD3, CLIPLoader type=wan, VAELoader,
+# WanImageToVideo, KSamplerAdvanced (two passes), VAEDecode, FrameInterpolate, CreateVideo,
+# SaveVideo. Graph built by pixel-dream server/models/wan-2-2-video.js. Renders 16 fps;
+# RIFE takes it to 32 / 48 fps. Size class: about 50 GB with the base; 48 GB GPU pool.
+#
+# LICENSE: the Civitai LoRA pair lists commercial use as "RentCivit" only (Civitai's own
+# generator). Operator's responsibility before this reaches production.
+model_downloads:
+  # Wan 2.2 I2V 14B, fp8 scaled. 14.3 GB each. Public.
+  - source: hf
+    repo_id: Comfy-Org/Wan-2.2
+    filename: split_files/diffusion_models/wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors
+    dest: /comfyui/models/diffusion_models/
+  - source: hf
+    repo_id: Comfy-Org/Wan-2.2
+    filename: split_files/diffusion_models/wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors
+    dest: /comfyui/models/diffusion_models/
+
+  # lightx2v 4-step LoRAs (1.2 GB each), for the fast passes.
+  - source: hf
+    repo_id: Comfy-Org/Wan-2.2
+    filename: split_files/loras/wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors
+    dest: /comfyui/models/loras/
+  - source: hf
+    repo_id: Comfy-Org/Wan-2.2
+    filename: split_files/loras/wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors
+    dest: /comfyui/models/loras/
+
+  # Text encoder + VAE (6.7 GB + 254 MB).
+  - source: hf
+    repo_id: Comfy-Org/Wan_2.1_ComfyUI_repackaged
+    filename: split_files/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors
+    dest: /comfyui/models/text_encoders/
+  - source: hf
+    repo_id: Comfy-Org/Wan_2.1_ComfyUI_repackaged
+    filename: split_files/vae/wan_2.1_vae.safetensors
+    dest: /comfyui/models/vae/
+
+  # WAN General NSFW 2.2 v0.08a — https://civitai.com/models/1307155 (570 MB each). One file per
+  # noise stage: HIGH goes on the high-noise model, LOW on the low-noise model.
+  - source: url
+    url: https://civitai.com/api/download/models/2073605
+    filename: NSFW-22-H-e8.safetensors
+    dest: /comfyui/models/loras/
+    auth_header_env: CIVITAI_TOKEN
+  - source: url
+    url: https://civitai.com/api/download/models/2083303
+    filename: NSFW-22-L-e8.safetensors
+    dest: /comfyui/models/loras/
+    auth_header_env: CIVITAI_TOKEN
+
+  # RIFE v4.26 frame interpolation (22.7 MB, public) for core FrameInterpolationModelLoader.
+  - source: hf
+    repo_id: Comfy-Org/frame_interpolation
+    filename: frame_interpolation/rife_v4.26.safetensors
+    dest: /comfyui/models/frame_interpolation/
+
+output:
+  type: video   # SaveVideo emits under ComfyUI's "videos" history key
