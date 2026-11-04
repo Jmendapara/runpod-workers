@@ -4,10 +4,12 @@ Run: python3 tests/test_lora_trainer.py   (no GPU, no ai-toolkit, no network)
 """
 import os
 import sys
+import tempfile
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "trainers", "lora-trainer"))
 
+from run_log import RunLog  # noqa: E402
 from trainer_config import (  # noqa: E402
     pick_output_loras,
     _sample_every, build_config, caption_for, parse_progress_line, previews_ready, slugify, validate_input,
@@ -245,6 +247,72 @@ class ProgressParseTests(unittest.TestCase):
         self.assertEqual(slugify("My Dog Rex!!"), "my-dog-rex")
         self.assertEqual(slugify("   "), "lora")
         self.assertEqual(slugify("a" * 100), "a" * 48)
+
+
+class RunLogTests(unittest.TestCase):
+    def make(self, **kw):
+        self.dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.dir.cleanup)
+        self.uploads = []
+        self.now = 1000.0
+        upload = kw.pop("upload", lambda path: self.uploads.append(open(path, encoding="utf-8").read()))
+        return RunLog(os.path.join(self.dir.name, "run.log"), "users/u/loras/t/logs/run.log", upload, clock=lambda: self.now, **kw)
+
+    def test_hides_secrets(self):
+        log = self.make(secrets=["hf_secret", None, "https://x/control?token=abc"])
+        log.write("token hf_secret and https://x/control?token=abc here")
+        log.upload(force=True)
+        self.assertIn("token [redacted] and [redacted] here", self.uploads[0])
+        self.assertNotIn("hf_secret", self.uploads[0])
+        self.assertNotIn("abc", self.uploads[0])
+
+    def test_uploads_on_a_schedule_and_only_when_there_is_something_new(self):
+        log = self.make(every_s=120)
+        log.upload()
+        self.assertEqual(len(self.uploads), 0)  # nothing written yet
+        log.write("a")
+        log.upload()
+        self.assertEqual(len(self.uploads), 1)  # first upload goes straight away
+        log.write("b")
+        log.upload()
+        self.assertEqual(len(self.uploads), 1)  # not due yet
+        log.upload(force=True)
+        self.assertEqual(len(self.uploads), 2)
+        log.upload(force=True)
+        self.assertEqual(len(self.uploads), 2)  # nothing new
+        self.now += 121
+        log.write("c")
+        log.upload()
+        self.assertEqual(len(self.uploads), 3)
+
+    def test_a_failed_upload_never_raises_and_is_tried_again(self):
+        calls = []
+
+        def flaky(path):
+            calls.append(path)
+            if len(calls) == 1:
+                raise RuntimeError("R2 is down")
+
+        log = self.make(upload=flaky)
+        log.write("a")
+        log.upload(force=True)
+        log.upload(force=True)
+        self.assertEqual(len(calls), 2)
+
+    def test_stops_growing_at_the_cap(self):
+        log = self.make(max_bytes=100)
+        for i in range(50):
+            log.write(f"line {i}")
+        log.upload(force=True)
+        self.assertIn("log truncated", self.uploads[0])
+        self.assertLess(len(self.uploads[0]), 200)
+
+    def test_close_removes_the_file_and_later_writes_are_ignored(self):
+        log = self.make()
+        log.write("a")
+        log.close()
+        self.assertFalse(os.path.exists(log.path))
+        log.write("b")
 
 
 if __name__ == "__main__":

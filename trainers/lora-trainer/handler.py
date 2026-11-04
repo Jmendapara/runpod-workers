@@ -31,6 +31,7 @@ import runpod
 import yaml
 
 from r2 import download_to_file, make_client, resolve_bucket_target, upload_file
+from run_log import RunLog
 from trainer_config import STEP_RE, build_config, caption_for, parse_progress_line, pick_output_loras, previews_ready, sample_step_of, validate_input
 
 AI_TOOLKIT_DIR = os.environ.get("AI_TOOLKIT_DIR", "/app/ai-toolkit")
@@ -45,8 +46,17 @@ PREVIEW_SETTLE_S = 2.0  # a sample file untouched for this long has finished bei
 REFRESH_WORKER = os.environ.get("REFRESH_WORKER", "false").lower() == "true"
 
 
+STEP_LOG_EVERY = 100
+RUN_LOG_FILE = "logs/run.log"
+WORKER_ID = os.environ.get("RUNPOD_POD_ID")
+
+run_log: RunLog | None = None  # the current job's log; a worker runs one job at a time
+
+
 def log(msg: str) -> None:
     print(f"lora-trainer - {msg}", flush=True)
+    if run_log:
+        run_log.write(f"lora-trainer - {msg}")
 
 
 def hf_home() -> str:
@@ -84,6 +94,7 @@ class Progress:
         self.remaining_s: int | None = None
         self.message: str | None = None
         self.started = time.time()
+        self.gpu = gpu_name()
         self.train_started: float | None = None
         self.step_times: deque[tuple[float, int]] = deque(maxlen=50)
         self.last_push = 0.0
@@ -145,6 +156,8 @@ class Progress:
                 "loss": self.loss,
                 "message": self.message,
                 "previews": [{"step": p["step"], "keys": list(p["keys"])} for p in self.previews],
+                "worker_id": WORKER_ID,
+                "gpu": self.gpu,
                 "updated_at": int(time.time()),
             }
 
@@ -197,6 +210,7 @@ class Trainer:
         self.env = env
         self.progress = progress
         self.tail: deque[str] = deque(maxlen=LOG_TAIL_LINES)
+        self.next_logged_step = 0
         self.proc: subprocess.Popen | None = None
         self.reader: threading.Thread | None = None
 
@@ -243,11 +257,16 @@ class Trainer:
         if not is_step_redraw(text):
             self.tail.append(text[:400])
             print(f"[ai-toolkit] {text[:400]}", flush=True)
+            if run_log:
+                run_log.write(f"[ai-toolkit] {text[:400]}")
         parsed = parse_progress_line(text, self.progress.total)
         if not parsed:
             return
         if "step" in parsed:
             self.progress.set_step(parsed["step"], parsed.get("loss"), parsed.get("remaining_s"))
+            if parsed["step"] >= self.next_logged_step:
+                self.next_logged_step = parsed["step"] + STEP_LOG_EVERY
+                log(f"step {parsed['step']}/{self.progress.total} loss={self.progress.loss} sec_per_step={self.progress.sec_per_step()}")
             return
         phase = parsed.get("phase")
         if phase == "sampling":
@@ -401,9 +420,31 @@ def find_samples(output_dir: str, name: str) -> list[str]:
 
 
 def handler(job):
+    """Runs one training and adds what an investigation needs to every result, failed or not."""
+    global run_log
+    run = {"started": time.time(), "progress": None}
+    result = train(job, run)
+    progress = run["progress"]
+    info = {"worker_id": WORKER_ID, "gpu": gpu_name(), "total_seconds": int(time.time() - run["started"])}
+    if progress:
+        info.update({"phase": progress.phase, "steps_completed": progress.step})
+    if run_log:
+        info["log_key"] = run_log.key
+    result = {**info, **result}
+    if result.get("error"):
+        log(f"failed: code={result.get('code')} phase={info.get('phase')} step={info.get('steps_completed')} error={str(result['error'])[:1000]}")
+    if run_log:
+        run_log.upload(force=True)
+        run_log.close()
+        run_log = None
+    return result
+
+
+def train(job, run):
+    global run_log
     job_input = job.get("input") or {}
     job_id = job.get("id", "?")
-    started = time.time()
+    started = run["started"]
     workdir = None
     trainer: Trainer | None = None
     try:
@@ -416,11 +457,9 @@ def handler(job):
             target = resolve_bucket_target(spec["bucket_profile"])
         except (ValueError, RuntimeError) as exc:
             return {"error": str(exc), "code": "storage_not_configured"}
-        log(f"job={job_id} training={spec['training_id']} arch={spec['model']['arch']} "
-            f"items={len(spec['dataset']['items'])} steps={spec['train']['steps']} "
-            f"bucket={target.bucket} input_bucket={target.input_bucket}")
 
         progress = Progress(job, spec["train"]["steps"])
+        run["progress"] = progress
         progress.push(force=True)
 
         workdir = os.path.join(JOBS_ROOT, spec["training_id"])
@@ -428,6 +467,16 @@ def handler(job):
         os.makedirs(workdir, exist_ok=True)
 
         client = make_client(target)
+        log_key = spec["output"]["prefix"] + RUN_LOG_FILE
+        run_log = RunLog(
+            os.path.join(JOBS_ROOT, f"{spec['training_id']}.log"), log_key,
+            lambda path: upload_file(client, target.bucket, log_key, path, "text/plain"),
+            secrets=[spec["hf_token"], spec["control_url"]],
+        )
+        log(f"job={job_id} training={spec['training_id']} worker={WORKER_ID} gpu={progress.gpu} "
+            f"arch={spec['model']['arch']} items={len(spec['dataset']['items'])} steps={spec['train']['steps']} "
+            f"bucket={target.bucket} input_bucket={target.input_bucket}")
+        run_log.upload(force=True)
         try:
             ds_stats = download_dataset(client, target.input_bucket, spec, workdir)
         except Exception as exc:
@@ -440,7 +489,7 @@ def handler(job):
         with open(config_path, "w", encoding="utf-8") as fh:
             yaml.safe_dump(config, fh, sort_keys=False)
         safe_cfg = json.loads(json.dumps(config))
-        log(f"config: {json.dumps(safe_cfg)[:2000]}")
+        log(f"config: {json.dumps(safe_cfg)[:8000]}")
 
         env = dict(os.environ)
         env["HF_HOME"] = hf_home()
@@ -473,6 +522,7 @@ def handler(job):
                 break
             previews.scan()
             progress.push()
+            run_log.upload()
             time.sleep(1.0)
         trainer.wait_reader()
         previews.scan(force=True)
