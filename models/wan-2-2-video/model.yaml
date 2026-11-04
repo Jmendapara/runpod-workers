@@ -5,7 +5,7 @@ name: wan-2-2-video
 # WanImageToVideo, KSamplerAdvanced (two passes), VAEDecode, FrameInterpolate, CreateVideo,
 # SaveVideo. Graph built by pixel-dream server/models/wan-2-2-video.js. Renders 16 fps;
 # RIFE takes it to 32 / 48 fps. Size class: about 50 GB with the base; runs on the 80 GB GPU pool.
-# The NSFW pair below is baked in for later use; pixel-dream never applies it (owner 2026-11-04).
+# The NSFW pair below is a pixel-dream LoRA: picked by the user, or auto-applied to explicit prompts when nothing is picked.
 #
 # LICENSE: the Civitai LoRA pair lists commercial use as "RentCivit" only (Civitai's own
 # generator). Operator's responsibility before this reaches production.

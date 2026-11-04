@@ -184,7 +184,7 @@ build.sh                    The one entrypoint, curl|bash-friendly
 ## wan-2-2-video endpoint sizing
 
 Image-to-video: Wan 2.2 14B high + low noise fp8 (14.3 GB each), lightx2v speed LoRAs, text encoder,
-VAE, RIFE, and the WAN General NSFW LoRA pair. The pair is baked in but pixel-dream never applies it.
+VAE, RIFE, and the WAN General NSFW LoRA pair (pixel-dream: user-picked, or auto on explicit prompts).
 42.5 GB compressed. Suggested RunPod serverless settings: 80 GB GPU pool, 100 GB disk, 1200 s
 execution timeout, `minCudaVersion` 13.0.
 
