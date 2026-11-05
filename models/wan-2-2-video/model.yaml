@@ -59,5 +59,27 @@ model_downloads:
     filename: frame_interpolation/rife_v4.26.safetensors
     dest: /comfyui/models/frame_interpolation/
 
+  # Smooth Mix Wan 2.2 14B I2V v2.0 - https://civitai.com/models/1995784 (versions 2513182 + 2513186,
+  # 13.55 GB each). A merged CHECKPOINT, not a LoRA: High replaces the high-noise model, Low the
+  # low-noise one. Under evaluation against the official weights; pixel-dream does not reference it yet.
+  # LICENSE: Civitai lists commercial use as "RentCivit" and "Image" (no "Rent" on other services) and
+  # requires crediting the author. Operator's responsibility before this reaches production.
+  - source: url
+    url: https://civitai.com/api/download/models/2513182
+    filename: smoothMixWan2214BI2V_i2vV20High.safetensors
+    dest: /comfyui/models/diffusion_models/
+    auth_header_env: CIVITAI_TOKEN
+  - source: url
+    url: https://civitai.com/api/download/models/2513186
+    filename: smoothMixWan2214BI2V_i2vV20Low.safetensors
+    dest: /comfyui/models/diffusion_models/
+    auth_header_env: CIVITAI_TOKEN
+
+  # The speed LoRA Smooth Mix's author runs it with (1.4 GB, public; 3.0 on High, 1.5 on Low).
+  - source: hf
+    repo_id: Kijai/WanVideo_comfy
+    filename: Lightx2v/lightx2v_I2V_14B_480p_cfg_step_distill_rank128_bf16.safetensors
+    dest: /comfyui/models/loras/
+
 output:
   type: video   # SaveVideo emits under ComfyUI's "videos" history key
