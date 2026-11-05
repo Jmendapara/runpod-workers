@@ -188,9 +188,10 @@ VAE, RIFE, and the WAN General NSFW LoRA pair (pixel-dream: user-picked, or auto
 42.5 GB compressed. Suggested RunPod serverless settings: 80 GB GPU pool, 100 GB disk, 1200 s
 execution timeout, `minCudaVersion` 13.0.
 
-Measured on the 80 GB pool at 720x960 (10 steps, 2026-11-04): 49 frames 68 s, 81 frames + RIFE x2
-148 s (first job on the worker, so including model load), 129 frames + RIFE x3 326 s. First pull on
-a fresh endpoint about 12.5 min.
+Measured on the 80 GB pool at 720x960 (2026-11-04, pixel-dream's recipe: 10 full-model high-noise steps
++ 4 speed-LoRA low-noise steps, chosen because motion follows the high-noise step count): 81 frames +
+RIFE x2 about 240 s. The high-noise speed LoRA stays in the image but that recipe does not load it. First
+pull on a fresh endpoint about 12.5 min.
 
 ## minimax-h3 endpoint sizing
 
