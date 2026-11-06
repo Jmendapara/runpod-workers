@@ -2,7 +2,7 @@ name: krea-2-turbo
 
 # Krea 2 OSS Turbo (FP8) text-to-image. CLIPLoader(type=krea2) + UNETLoader are CORE
 # ComfyUI nodes — REQUIRES a base image built with ComfyUI >= 0.25.0 (built-in Krea2
-# support). One custom_node (ConditioningKrea2Rebalance) + eight baked LoRAs. All three weights
+# support). One custom_node (ConditioningKrea2Rebalance) + ten baked LoRAs. All three weights
 # are public (no HF token).
 
 custom_nodes:
@@ -40,6 +40,15 @@ model_downloads:
     dest: /comfyui/models/loras/
     auth_header_env: CIVITAI_TOKEN
 
+  # Krea 2 NSFW V5 "Vérité" (model 2725430 / version 3431552). The version ships two files;
+  # fileId pins Verite_realism (the author's "use this for almost everything"), not the
+  # 10k-step Verite_overcooked. Auto-applied by Pixel Dream / OpenSourceGen on sexual prompts.
+  - source: url
+    url: https://civitai.com/api/download/models/3431552?fileId=3327545
+    filename: Verite_realism.safetensors
+    dest: /comfyui/models/loras/
+    auth_header_env: CIVITAI_TOKEN
+
   # Realism Engine — Krea 2 v3.1 (model 2688234 / version 3109006)
   - source: url
     url: https://civitai.com/api/download/models/3109006
@@ -69,9 +78,18 @@ model_downloads:
     auth_header_env: CIVITAI_TOKEN
 
   # SNOFS (Sex, Nudes, Other Fun Stuff) — Krea 2 v1.4, a LoKR (model 1972981 / version 3290120)
+  # Kept beside v1.6 while a deployed app still references it (the endpoint is shared by
+  # every app + env); drop it once nothing names snofs_krea_v1_4.
   - source: url
     url: https://civitai.com/api/download/models/3290120
     filename: snofs_krea_v1_4.safetensors
+    dest: /comfyui/models/loras/
+    auth_header_env: CIVITAI_TOKEN
+
+  # SNOFS — Krea 2 v1.6, a LoKR (model 1972981 / version 3446779): more, higher-res training.
+  - source: url
+    url: https://civitai.com/api/download/models/3446779
+    filename: snofs_krea_v1_6.safetensors
     dest: /comfyui/models/loras/
     auth_header_env: CIVITAI_TOKEN
 
