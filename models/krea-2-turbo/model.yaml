@@ -4,6 +4,13 @@ name: krea-2-turbo
 # ComfyUI nodes — REQUIRES a base image built with ComfyUI >= 0.25.0 (built-in Krea2
 # support). One custom_node (ConditioningKrea2Rebalance) + ten baked LoRAs. All three weights
 # are public (no HF token).
+#
+# ⚠ A from-scratch build currently FAILS: Aesthetic Amateur Photo (Civitai 689192 / 3284331)
+# was deleted from Civitai (404, checked 2026-11-06). The image deployed on 2026-11-06
+# (krea-2-turbo-runpod-worker:2026-11-06-*-6d26102) is therefore the 2026-09-26-0358-6338fe4
+# image plus ONE thin layer with Verite_realism + snofs_krea_v1_6 (sha256-checked), built by
+# hand on the build box. Before the next full rebuild, re-host Krea_Amateur_V4.safetensors
+# (copy it out of that image) or drop the LoRA from here and from both apps.
 
 custom_nodes:
   # Per-layer conditioning rebalance for Krea2 (Qwen3-VL taps). torch-only, no extra pip.
