@@ -1,6 +1,10 @@
 name: minimax-h3
-# MiniMax H3 — text-to-video, first/last-frame image-to-video, reference-to-video
-# and multiframe reference (chained MiniMaxH3AddGuide), all with native stereo audio
+# 2026-11-08: + RelayVSR x2 weights and the ComfyUI master overlay (render-small-then-upscale switch);
+# the Blowjob LoRA now comes from the owner's HF repo (Civitai copy removed). Otherwise the 59dec0e
+# definition behind the deployed 2026-10-07 image.
+# MiniMax H3 — text-to-video, first/last-frame image-to-video, reference-to-video,
+# multiframe reference (chained MiniMaxH3AddGuide) and character swap (ref2va + the Akatz
+# Character Swap LoRA, source clip as a reference video), all with native stereo audio
 # (https://docs.comfy.org/tutorials/video/minimax/minimax-h3).
 #
 # ALL nodes are ComfyUI CORE: MiniMaxH3ImageToVideo (t2va when no first_frame is
@@ -24,15 +28,23 @@ name: minimax-h3
 #
 # Sampling is fixed by the apps (opensourcegen + pixel-dream server/models/minimax-h3.js):
 # fl2va: 8-step turbo LoRA @1.0; ref2va: 4-step turbo LoRA @1.0 (+ the NSFW LoRA
-# when the prompt is sexual enough); both res_multistep /
+# when the prompt is sexual enough, + up to 2 user-picked LoRAs); both res_multistep /
 # simple, BasicGuider (no CFG, no negative prompt), 24 fps, 768p canvas (short edge
 # 768, area <= 768*1344, /32), length on the model's 17k+5 frame grid (124 = ~5 s ...
-# 362 = ~15 s).
+# 362 = ~15 s). character-swap: ref2va + Character Swap LoRA @1.0, 20 full steps, length
+# follows the source clip (56 f = ~2.3 s ... 362 f).
 #
 # LICENSE: Comfy-Org/MiniMax-H3 is published under the
 # minimax-h3-community-license-agreement. The Comfy docs state that commercial use
 # of locally generated outputs requires a MiniMax commercial license (sold via
 # Comfy). Operator's responsibility.
+
+# Output frame rate (pixel-dream settings.fps 24/30/50/60): the model always renders 24 fps;
+# higher rates run core FrameInterpolate (RIFE v4.26, x5 -> 120 fps, ComfyUI >= 0.20) and then
+# VHS_SelectImages picks the target-rate frames from a server-computed index list before CreateVideo.
+custom_nodes:
+  - repo: https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite # VHS_SelectImages (frame-rate resample)
+    ref: 4d907bee61e92c2e65af3bd6383a4e4d356126d1                   # 2026-09-02
 
 model_downloads:
   # All files are public on Hugging Face — no HUGGINGFACE_ACCESS_TOKEN required.
@@ -86,6 +98,14 @@ model_downloads:
     filename: loras/minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16.safetensors
     dest: /comfyui/models/loras/
 
+  # lightx2v turbo LoRA for ref2va, 8-step v1.0 trained at 768p (1344x768, video shift 6 /
+  # audio shift 3 per the model card's 768p rows). Candidate replacement for the 4-step v0.1
+  # (trained at 544p, shift 12) — 2026-09-29 quality investigation. Not on Comfy-Org; lightx2v only.
+  - source: hf
+    repo_id: lightx2v/Minimax-h3-Turbo
+    filename: minimax_h3_ref2v_turbo_8step_v1.0_768p_comfyui_bf16.safetensors
+    dest: /comfyui/models/loras/
+
   # MiniMax H3 NSFW Unlocked (MidLAB) — https://civitai.com/models/2925727
   # (model 2925727 / version 3345855 "M3_V1.1"). Rank-16 LoRA on the 50 blocks'
   # mlp.fc1/fc2 only (fp32, 164 MB). Trained on fl2va (t2v + i2v); fl2va and ref2va
@@ -97,6 +117,120 @@ model_downloads:
     filename: M3_Unlocked_V2.1.safetensors
     dest: /comfyui/models/loras/
     auth_header_env: CIVITAI_TOKEN
+
+  # User-selectable LoRAs (pixel-dream MINIMAX_H3_LORA_MAP, chained after the turbo
+  # LoRA). Both are ai-toolkit exports trained on MiniMax H3; every target tensor
+  # exists with the same shape in fl2va AND ref2va, so they load in all five modes.
+
+  # HMNSFW AIO Sex LoRA V2.5 (HearmemanAI) — https://civitai.com/models/2834417
+  # (model 2834417 / version 3268303). Rank 16, blocks' mlp.fc1/fc2 only (fp16, 82 MB).
+  # Author: strength 0.5–0.9, no trigger word.
+  - source: url
+    url: https://civitai.com/api/download/models/3268303
+    filename: HMNSFW-AIO-V2.5.safetensors
+    dest: /comfyui/models/loras/
+    auth_header_env: CIVITAI_TOKEN
+
+  # HMCumshot v1.0 (HearmemanAI) — https://civitai.com/models/2857340
+  # (model 2857340 / version 3329529). Rank 32, blocks' attn qkv/out + mlp and the
+  # token refiner (fp16, 296 MB). Author: 0.7 on t2v/i2v, 0.9 on reference-to-video.
+  - source: url
+    url: https://civitai.com/api/download/models/3329529
+    filename: HMCumshot_V1.0.safetensors
+    dest: /comfyui/models/loras/
+    auth_header_env: CIVITAI_TOKEN
+
+  # The next three are rank 16/32 exports on the blocks' attn qkv/out + mlp and the token
+  # refiner; every target tensor matches fl2va AND ref2va (header check 2026-09-27).
+
+  # HMMisDog v1.5 (HearmemanAI) — https://civitai.com/models/2924146
+  # (model 2924146 / version 3356770). Male-POV missionary / doggy. Rank 32 (fp16, 296 MB).
+  # No trigger word, no strength guidance.
+  - source: url
+    url: https://civitai.com/api/download/models/3356770
+    filename: HMMisDogV1.5.safetensors
+    dest: /comfyui/models/loras/
+    auth_header_env: CIVITAI_TOKEN
+
+  # Fingering Pussy v1.1_H3 (Generation3dX) — https://civitai.com/models/2007360
+  # (model 2007360 / version 3342542). Rank 16 (bf16, 148 MB). No trigger word; the author
+  # tested everything at 0.8, frontal view of a woman lying on her back.
+  - source: url
+    url: https://civitai.com/api/download/models/3342542
+    filename: h3_base_fingering_v1.1-6000.safetensors
+    dest: /comfyui/models/loras/
+    auth_header_env: CIVITAI_TOKEN
+
+  # Blowjob Minimax H3 v3 (kermitfrog1202) — https://civitai.com/models/2845331
+  # (model 2845331 / version 3285598). Rank 32 with alphas (bf16, 296 MB). Trigger bl0w_j0b,
+  # strength 1.0. Canonical file name has spaces → renamed via filename:.
+  # Civitai model 3285598 (MM-H3_Blowjob_v3) was removed (404 since 2026-11-08). This is the file
+  # recovered from the deployed image (2026-10-07-1805-59dec0e), hosted in the owner's PRIVATE HF repo
+  # (needs HUGGINGFACE_ACCESS_TOKEN at build time, already forwarded as a build secret).
+  - source: hf
+    repo_id: Jmendapara/minimax-h3-loras
+    filename: MM-H3_Blowjob_v3.safetensors
+    dest: /comfyui/models/loras/
+
+  # Ski Slope Breasts — Steep Slope XXL MH3 (TeeKay) — https://civitai.com/models/942483
+  # (model 942483 / version 3345150). Paid early access on Civitai: the CIVITAI_TOKEN account
+  # must own it or the download 403s ("Early Access"). Rank 32 (bf16, 296 MB), same layers as
+  # above. Trigger SteepSlopeTiddies; author used 1.10. Long canonical name → renamed.
+  - source: url
+    url: https://civitai.com/api/download/models/3345150
+    filename: SteepSlopeTiddies_XXL_MH3.safetensors
+    dest: /comfyui/models/loras/
+    auth_header_env: CIVITAI_TOKEN
+
+  # Realism People (fal) — https://huggingface.co/fal/MiniMax-H3-Realism-People-LoRA
+  # (repo sha 039cc85). Rank 32, no alphas (bf16, 131 MB), blocks' attn qkv_proj/out_proj only;
+  # trained on fl2va, every tensor matches fl2va AND ref2va (header check 2026-10-05).
+  # Trigger r34l1sm; author: 1.0 intended, 0.6-0.8 lighter. Public, no token.
+  - source: hf
+    repo_id: fal/MiniMax-H3-Realism-People-LoRA
+    filename: h3-realism-people-t2v-i2v-r2v.safetensors
+    dest: /comfyui/models/loras/
+
+  # Character Swap LoRA v1 (Akatz Labs) — https://huggingface.co/akatz-ai/MiniMax-H3-Character-Swap-LoRA
+  # (repo lastModified 2026-09-27; sha256 4b2a3f42…f79, 155 MB). Rank 16/16 adapter trained on the
+  # ref2va int8 base: replaces the person named in the prompt in <Video 1> with the character in
+  # <Picture 1> (two-character inference tested upstream, not supervised). Drives the apps'
+  # "Character Swap" tool (minimax-h3:character-swap): ref2va + this LoRA @1.0, 20 full steps,
+  # the source clip wired into ref_videos.ref_video_0 via VHS_LoadVideo (force_rate 24). No trigger
+  # word, no turbo LoRA. License: MiniMax H3 Community License (same as the base), not Apache-2.0.
+  - source: hf
+    repo_id: akatz-ai/MiniMax-H3-Character-Swap-LoRA
+    filename: h3_character_swap_pro4500_1000.safetensors
+    dest: /comfyui/models/loras/
+
+  # RIFE v4.26 frame interpolation model (22.7 MB, public) for core FrameInterpolationModelLoader.
+  - source: hf
+    repo_id: Comfy-Org/frame_interpolation
+    filename: frame_interpolation/rife_v4.26.safetensors
+    dest: /comfyui/models/frame_interpolation/
+
+  # ----- RelayVSR x2 (render small + upscale, the apps' admin "Video render size" switch) -----
+  # Comfy-Org/RelayVSR (Apache-2.0): a one-step Wan2.2-5B pass on every 15th frame + a per-frame
+  # Flash decoder; the x2 LightX2V retrain, int8 convrot (5.16 GB) + its fp32 Flash decoder (128 MB).
+  # Core nodes RelayVSRConditioning / VSRDecode (Comfy-Org/ComfyUI#17511, merged 2026-11-05) — see
+  # the post_install note below. Graph: server/models/minimax-h3.js (`upscale` option).
+  - source: hf
+    repo_id: Comfy-Org/RelayVSR
+    filename: diffusion_models/relayvsr_x2_lightx2v_int8_convrot.safetensors
+    dest: /comfyui/models/diffusion_models/
+  - source: hf
+    repo_id: Comfy-Org/RelayVSR
+    filename: vae/relayvsr_flash_vae_x2_fp32.safetensors
+    dest: /comfyui/models/vae/
+
+# TEMPORARY (2026-11-08): the RelayVSR nodes are on ComfyUI master but in no tagged release yet
+# (v0.44.0 predates the merge; comfy-cli installs `latest`/`nightly` only). patches/upgrade-comfyui.py
+# overlays a pinned master commit (bdb0816, 2026-11-08) onto the base's ComfyUI and installs its
+# requirements (comfy-kitchen 0.2.41 → window_attention). Validated on the 2026-11-08-0500 base for
+# every MiniMax mode in the lab. Remove this post_install and rebuild on a base with
+# COMFYUI_VERSION=latest once a tagged release includes #17511.
+post_install:
+  - patches/upgrade-comfyui.py
 
 output:
   type: video   # SaveVideo emits under ComfyUI's "videos" history key
