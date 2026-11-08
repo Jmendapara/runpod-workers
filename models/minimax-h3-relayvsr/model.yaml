@@ -7,6 +7,9 @@ name: minimax-h3-relayvsr
 # Everything below the marker is the deployed minimax-h3 definition, unchanged.
 #
 # ----- RelayVSR additions -----
+# NOTE (2026-11-08): the deployed yaml's Civitai LoRAs are NOT baked here — Civitai returned an HTTP error for
+# model 3285598 (MM-H3_Blowjob_v3) during the build, which would also break a full rebuild of minimax-h3 itself.
+# They play no part in the upscale measurements.
 # ----- deployed minimax-h3 model.yaml (59dec0e) follows -----
 # MiniMax H3 — text-to-video, first/last-frame image-to-video, reference-to-video,
 # multiframe reference (chained MiniMaxH3AddGuide) and character swap (ref2va + the Akatz
@@ -118,78 +121,6 @@ model_downloads:
   # share the exact tensor layout, so it also loads on ref2va (reference-to-video,
   # multiframe). Auto-applied by pixel-dream above a prompt sexual score, chained
   # after the turbo LoRA. Author: strength 0.3–1 (0.5 sweet spot).
-  - source: url
-    url: https://civitai.com/api/download/models/3345855
-    filename: M3_Unlocked_V2.1.safetensors
-    dest: /comfyui/models/loras/
-    auth_header_env: CIVITAI_TOKEN
-
-  # User-selectable LoRAs (pixel-dream MINIMAX_H3_LORA_MAP, chained after the turbo
-  # LoRA). Both are ai-toolkit exports trained on MiniMax H3; every target tensor
-  # exists with the same shape in fl2va AND ref2va, so they load in all five modes.
-
-  # HMNSFW AIO Sex LoRA V2.5 (HearmemanAI) — https://civitai.com/models/2834417
-  # (model 2834417 / version 3268303). Rank 16, blocks' mlp.fc1/fc2 only (fp16, 82 MB).
-  # Author: strength 0.5–0.9, no trigger word.
-  - source: url
-    url: https://civitai.com/api/download/models/3268303
-    filename: HMNSFW-AIO-V2.5.safetensors
-    dest: /comfyui/models/loras/
-    auth_header_env: CIVITAI_TOKEN
-
-  # HMCumshot v1.0 (HearmemanAI) — https://civitai.com/models/2857340
-  # (model 2857340 / version 3329529). Rank 32, blocks' attn qkv/out + mlp and the
-  # token refiner (fp16, 296 MB). Author: 0.7 on t2v/i2v, 0.9 on reference-to-video.
-  - source: url
-    url: https://civitai.com/api/download/models/3329529
-    filename: HMCumshot_V1.0.safetensors
-    dest: /comfyui/models/loras/
-    auth_header_env: CIVITAI_TOKEN
-
-  # The next three are rank 16/32 exports on the blocks' attn qkv/out + mlp and the token
-  # refiner; every target tensor matches fl2va AND ref2va (header check 2026-09-27).
-
-  # HMMisDog v1.5 (HearmemanAI) — https://civitai.com/models/2924146
-  # (model 2924146 / version 3356770). Male-POV missionary / doggy. Rank 32 (fp16, 296 MB).
-  # No trigger word, no strength guidance.
-  - source: url
-    url: https://civitai.com/api/download/models/3356770
-    filename: HMMisDogV1.5.safetensors
-    dest: /comfyui/models/loras/
-    auth_header_env: CIVITAI_TOKEN
-
-  # Fingering Pussy v1.1_H3 (Generation3dX) — https://civitai.com/models/2007360
-  # (model 2007360 / version 3342542). Rank 16 (bf16, 148 MB). No trigger word; the author
-  # tested everything at 0.8, frontal view of a woman lying on her back.
-  - source: url
-    url: https://civitai.com/api/download/models/3342542
-    filename: h3_base_fingering_v1.1-6000.safetensors
-    dest: /comfyui/models/loras/
-    auth_header_env: CIVITAI_TOKEN
-
-  # Blowjob Minimax H3 v3 (kermitfrog1202) — https://civitai.com/models/2845331
-  # (model 2845331 / version 3285598). Rank 32 with alphas (bf16, 296 MB). Trigger bl0w_j0b,
-  # strength 1.0. Canonical file name has spaces → renamed via filename:.
-  - source: url
-    url: https://civitai.com/api/download/models/3285598
-    filename: MM-H3_Blowjob_v3.safetensors
-    dest: /comfyui/models/loras/
-    auth_header_env: CIVITAI_TOKEN
-
-  # Ski Slope Breasts — Steep Slope XXL MH3 (TeeKay) — https://civitai.com/models/942483
-  # (model 942483 / version 3345150). Paid early access on Civitai: the CIVITAI_TOKEN account
-  # must own it or the download 403s ("Early Access"). Rank 32 (bf16, 296 MB), same layers as
-  # above. Trigger SteepSlopeTiddies; author used 1.10. Long canonical name → renamed.
-  - source: url
-    url: https://civitai.com/api/download/models/3345150
-    filename: SteepSlopeTiddies_XXL_MH3.safetensors
-    dest: /comfyui/models/loras/
-    auth_header_env: CIVITAI_TOKEN
-
-  # Realism People (fal) — https://huggingface.co/fal/MiniMax-H3-Realism-People-LoRA
-  # (repo sha 039cc85). Rank 32, no alphas (bf16, 131 MB), blocks' attn qkv_proj/out_proj only;
-  # trained on fl2va, every tensor matches fl2va AND ref2va (header check 2026-10-05).
-  # Trigger r34l1sm; author: 1.0 intended, 0.6-0.8 lighter. Public, no token.
   - source: hf
     repo_id: fal/MiniMax-H3-Realism-People-LoRA
     filename: h3-realism-people-t2v-i2v-r2v.safetensors
