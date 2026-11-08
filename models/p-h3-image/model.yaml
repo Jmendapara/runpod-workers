@@ -112,12 +112,11 @@ model_downloads:
     dest: /comfyui/models/loras/
     auth_header_env: CIVITAI_TOKEN
 
-  # Blowjob Minimax H3 v3 (kermitfrog1202) — civitai 2845331 / version 3285598.
-  - source: url
-    url: https://civitai.com/api/download/models/3285598
-    filename: MM-H3_Blowjob_v3.safetensors
-    dest: /comfyui/models/loras/
-    auth_header_env: CIVITAI_TOKEN
+  # NOT downloadable: Blowjob Minimax H3 v3 (kermitfrog1202, civitai 2845331 / version
+  # 3285598, MM-H3_Blowjob_v3.safetensors) was deleted from Civitai (404 "Model not found",
+  # found 2026-11-08). The file only survives inside the minimax-h3 worker images
+  # (e.g. jmendapara/minimax-h3-runpod-worker:2026-10-07-1805-59dec0e); add it as a thin
+  # layer (COPY --from that image) or re-host it before listing it here again.
 
   # Steep Slope XXL MH3 (TeeKay) — civitai 942483 / version 3345150. Paid early access:
   # the CIVITAI_TOKEN account must own it or the download 403s ("Early Access").
