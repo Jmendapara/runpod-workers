@@ -1,0 +1,120 @@
+{
+  "_NOTE": "RelayVSR x2 smoke: upscales an input clip (LoadVideo 'v_load' <- r2_inputs {node_id:'v_load', input_field:'file', r2_key:<any mp4 in the input bucket>}) with the core RelayVSRConditioning / KSampler(1 step, cfg 1) / VSRDecode nodes and re-muxes the source audio at the source fps. Expect one H.264 MP4 at 2x the input size under output.videos. Needs the ComfyUI master overlay (patches/upgrade-comfyui.py) + cu130 base.",
+  "workflow": {
+    "v_load": {
+      "inputs": {
+        "file": "input_video_0.mp4"
+      },
+      "class_type": "LoadVideo"
+    },
+    "v_comp": {
+      "inputs": {
+        "video": [
+          "v_load",
+          0
+        ]
+      },
+      "class_type": "GetVideoComponents"
+    },
+    "vsr_unet": {
+      "inputs": {
+        "unet_name": "relayvsr_x2_lightx2v_int8_convrot.safetensors",
+        "weight_dtype": "default"
+      },
+      "class_type": "UNETLoader"
+    },
+    "vsr_cond": {
+      "inputs": {
+        "model": [
+          "vsr_unet",
+          0
+        ],
+        "images": [
+          "v_comp",
+          0
+        ]
+      },
+      "class_type": "RelayVSRConditioning"
+    },
+    "vsr_sample": {
+      "inputs": {
+        "model": [
+          "vsr_unet",
+          0
+        ],
+        "positive": [
+          "vsr_cond",
+          0
+        ],
+        "negative": [
+          "vsr_cond",
+          0
+        ],
+        "latent_image": [
+          "vsr_cond",
+          1
+        ],
+        "seed": 0,
+        "steps": 1,
+        "cfg": 1.0,
+        "sampler_name": "euler",
+        "scheduler": "simple",
+        "denoise": 1.0
+      },
+      "class_type": "KSampler"
+    },
+    "vsr_vae": {
+      "inputs": {
+        "vae_name": "relayvsr_flash_vae_x2_fp32.safetensors"
+      },
+      "class_type": "VAELoader"
+    },
+    "vsr_decode": {
+      "inputs": {
+        "vae": [
+          "vsr_vae",
+          0
+        ],
+        "samples": [
+          "vsr_sample",
+          0
+        ],
+        "images": [
+          "v_comp",
+          0
+        ],
+        "detail": 1.0
+      },
+      "class_type": "VSRDecode"
+    },
+    "v_out": {
+      "inputs": {
+        "images": [
+          "vsr_decode",
+          0
+        ],
+        "fps": [
+          "v_comp",
+          2
+        ],
+        "audio": [
+          "v_comp",
+          1
+        ]
+      },
+      "class_type": "CreateVideo"
+    },
+    "v_save": {
+      "inputs": {
+        "filename_prefix": "video/RelayVSR",
+        "format": "mp4",
+        "codec": "h264",
+        "video": [
+          "v_out",
+          0
+        ]
+      },
+      "class_type": "SaveVideo"
+    }
+  }
+}

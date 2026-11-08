@@ -1,0 +1,43 @@
+name: relayvsr
+# RelayVSR video super-resolution (arXiv 2609.37850; Comfy-Org/RelayVSR repack): a one-step Wan2.2-5B
+# pass on every 15th frame + the per-frame "Flash" decoder for the rest. x2 (LightX2V retrain) and x4.
+# ALL nodes are ComfyUI CORE (Comfy-Org/ComfyUI#17511, merged 2026-11-05): UNETLoader -> RelayVSRConditioning
+# -> KSampler (1 step, cfg 1, euler/simple) -> VSRDecode (+ VAELoader of the matching Flash VAE), fed by
+# LoadVideo / GetVideoComponents and written back with CreateVideo / SaveVideo. The checkpoint decides the factor.
+#
+# EXPERIMENTAL (2026-11-08): no tagged ComfyUI release has the nodes yet (v0.44.0 predates the merge), so
+# patches/upgrade-comfyui.py overlays a pinned master commit onto the base's ComfyUI and installs its
+# requirements (comfy-kitchen 0.2.41 -> window_attention). Drop the post_install once a base ships
+# ComfyUI >= the first release containing #17511. int8_convrot weights need the CUDA 13 base.
+#
+# Sizing: ~5.3 GB resident per scale (int8 Wan + 128 MB Flash VAE); peak VRAM ~14-19 GB for a 768x1344 input
+# (community measurement). Runs on the 48 GB pool. Memory grows with output area x frames (the decoded
+# float32 frames live in system RAM): 2x of a 362-frame 768x1344 clip is ~18 GB of frames.
+#
+# LICENSE: Comfy-Org/RelayVSR is Apache-2.0.
+model_downloads:
+  # x2 — LightX2V retrain, int8 convrot. 5.16 GB. Loaded by core UNETLoader.
+  - source: hf
+    repo_id: Comfy-Org/RelayVSR
+    filename: diffusion_models/relayvsr_x2_lightx2v_int8_convrot.safetensors
+    dest: /comfyui/models/diffusion_models/
+  # x4 — original, int8 convrot. 5.16 GB.
+  - source: hf
+    repo_id: Comfy-Org/RelayVSR
+    filename: diffusion_models/relayvsr_x4_int8_convrot.safetensors
+    dest: /comfyui/models/diffusion_models/
+  # Flash decoders (fp32, 128 MB each). Loaded by core VAELoader; must match the checkpoint's scale.
+  - source: hf
+    repo_id: Comfy-Org/RelayVSR
+    filename: vae/relayvsr_flash_vae_x2_fp32.safetensors
+    dest: /comfyui/models/vae/
+  - source: hf
+    repo_id: Comfy-Org/RelayVSR
+    filename: vae/relayvsr_flash_vae_x4_fp32.safetensors
+    dest: /comfyui/models/vae/
+
+post_install:
+  - patches/upgrade-comfyui.py
+
+output:
+  type: video   # SaveVideo emits under ComfyUI's "videos" history key
