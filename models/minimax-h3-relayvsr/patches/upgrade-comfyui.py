@@ -31,19 +31,21 @@ def main():
     if not os.path.isdir(src):
         sys.exit(f"FATAL: extracted tree not found at {src}")
 
-    old = COMFY + ".old"
-    os.rename(COMFY, old)
-    shutil.move(src, COMFY)
-    for name in KEEP:
-        s, d = os.path.join(old, name), os.path.join(COMFY, name)
-        if not os.path.exists(s):
+    # Swap the tree in place: /comfyui comes from a lower image layer, so overlayfs refuses to
+    # rename the directory itself (EXDEV). Delete the old code entries, then move the new ones in.
+    for entry in os.listdir(COMFY):
+        if entry in KEEP:
             continue
-        if os.path.isdir(d) and not os.path.islink(d):
-            shutil.rmtree(d)
-        elif os.path.lexists(d):
-            os.remove(d)
-        shutil.move(s, d)
-    shutil.rmtree(old)
+        path = os.path.join(COMFY, entry)
+        if os.path.isdir(path) and not os.path.islink(path):
+            shutil.rmtree(path)
+        else:
+            os.remove(path)
+    for entry in os.listdir(src):
+        dst = os.path.join(COMFY, entry)
+        if entry in KEEP and os.path.exists(dst):
+            continue  # keep the base image's weights, custom nodes and paths config
+        shutil.move(os.path.join(src, entry), dst)
     shutil.rmtree("/tmp/comfyui-overlay", ignore_errors=True)
     os.remove(tgz)
 
