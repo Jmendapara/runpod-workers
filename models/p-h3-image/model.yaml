@@ -1,0 +1,131 @@
+name: p-h3-image
+
+# P-H3-Image (Pruna AI, built on MiniMax H3) — ONE model for text-to-image AND image
+# editing (https://docs.comfy.org/tutorials/image/pruna/p-h3-image,
+# https://huggingface.co/PrunaAI/P-H3-Image-Comfy). The image model is the MiniMax H3
+# fl2va transformer + the P-H3-Image LoRA @1.0, conditioned by the P-H3 4B text encoder
+# through PH3ImageConditioning, 8 steps (ManualSigmas), er_sde, BasicGuider (no CFG,
+# no negative prompt), MiniMaxH3SigmaShift 1.0/1.0. An optional prompt upsampler
+# (Qwen3.5-9B fine-tune, TextGenerateV2) rewrites a one-line request into the full
+# prompt / edit brief the model renders best.
+#
+# Every node is ComfyUI CORE. REQUIREMENTS:
+#   * a base image built with ComfyUI >= v0.44.0 (PH3ImageConditioning and the
+#     p-h3-image text encoder / VAE detection landed in 0.44.0, released 2026-11-04).
+#     Symptom on an older base: "Node 'PH3ImageConditioning' not found".
+#   * the CUDA 13 base: the int8_convrot / w4a8 weights need comfy-kitchen's CUDA
+#     kernels, which ComfyUI disables on cu128 (slow dequant).
+# Graphs are built server-side (pixel-dream + opensourcegen server/models/p-h3-image.js);
+# the edit image arrives as an r2_input targeting a LoadImage node.
+#
+# Because the image model IS the H3 fl2va transformer, the H3 video LoRAs (trained on
+# fl2va) chain after the P-H3 LoRA unchanged. The ones the apps offer are baked below.
+#
+# LICENSE: MiniMax H3 Community License (base weights + P-H3 LoRA); the text encoder's
+# Qwen3-VL-4B parts and the upsampler are Apache-2.0. Commercial use of outputs needs a
+# MiniMax license (https://comfy.org/minimax/license). Operator's responsibility.
+#
+# Sizing: ~40 GB of weights, ~37 GB resident with everything loaded (int8 transformer
+# 21 + text encoder 5.1 + w4a8 upsampler 6.7 + int8 VAE 3.1). Runs on the 48 GB pool
+# (L40S / RTX 6000 Ada / A6000 class); 32 GB cards would have to offload between models.
+
+model_downloads:
+  # All Hugging Face files are public — no HUGGINGFACE_ACCESS_TOKEN needed.
+
+  # Diffusion model — MiniMax H3 fl2va, pruned, int8 convrot. 20.97 GB. The same file the
+  # minimax-h3 video worker uses; the P-H3 LoRA below turns it into the image model.
+  - source: hf
+    repo_id: Comfy-Org/MiniMax-H3
+    filename: diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors
+    dest: /comfyui/models/diffusion_models/
+
+  # P-H3-Image LoRA (bf16, 1.96 GB) — always loaded @1.0 first in the chain.
+  - source: hf
+    repo_id: PrunaAI/P-H3-Image-Comfy
+    filename: loras/p-h3-image_lora_bf16.safetensors
+    dest: /comfyui/models/loras/
+
+  # P-H3-Image text encoder (Qwen3-VL-4B + text connector), int8 convrot. 5.12 GB.
+  # CLIPLoader type=minimax (detected by text_connector.proj.weight).
+  - source: hf
+    repo_id: PrunaAI/P-H3-Image-Comfy
+    filename: text_encoders/p-h3-image_text_encoder_int8_convrot.safetensors
+    dest: /comfyui/models/text_encoders/
+
+  # Prompt upsampler (Qwen3.5-9B fine-tune), w4a8. 6.72 GB, ~9 GB peak. The official
+  # template's pick; bf16 (19.3 GB) would not leave room on a 48 GB card.
+  - source: hf
+    repo_id: PrunaAI/P-H3-Image-Comfy
+    filename: text_encoders/p-h3-image_prompt_upsampler_w4a8.safetensors
+    dest: /comfyui/models/text_encoders/
+
+  # P-H3-Image VAE, int8 convrot. 3.15 GB.
+  - source: hf
+    repo_id: PrunaAI/P-H3-Image-Comfy
+    filename: vae/p-h3-image_vae_int8_convrot.safetensors
+    dest: /comfyui/models/vae/
+
+  # ── MiniMax H3 LoRAs (same files + versions as models/minimax-h3) ──
+
+  # MiniMax H3 NSFW Unlocked (MidLAB) — https://civitai.com/models/2925727
+  # (model 2925727 / version 3345855 "M3_V1.1"). Rank 16 on the blocks' mlp.fc1/fc2 (164 MB).
+  # Both apps auto-apply it above a prompt sexual score; pickable on pixel-dream.
+  - source: url
+    url: https://civitai.com/api/download/models/3345855
+    filename: M3_Unlocked_V2.1.safetensors
+    dest: /comfyui/models/loras/
+    auth_header_env: CIVITAI_TOKEN
+
+  # Realism People (fal) — https://huggingface.co/fal/MiniMax-H3-Realism-People-LoRA.
+  # Rank 32 on attn qkv/out (131 MB). Trigger r34l1sm. SFW; offered in both apps.
+  - source: hf
+    repo_id: fal/MiniMax-H3-Realism-People-LoRA
+    filename: h3-realism-people-t2v-i2v-r2v.safetensors
+    dest: /comfyui/models/loras/
+
+  # The rest are pixel-dream only (adult).
+  # HMNSFW AIO Sex LoRA V2.5 (HearmemanAI) — civitai 2834417 / version 3268303.
+  - source: url
+    url: https://civitai.com/api/download/models/3268303
+    filename: HMNSFW-AIO-V2.5.safetensors
+    dest: /comfyui/models/loras/
+    auth_header_env: CIVITAI_TOKEN
+
+  # HMCumshot v1.0 (HearmemanAI) — civitai 2857340 / version 3329529.
+  - source: url
+    url: https://civitai.com/api/download/models/3329529
+    filename: HMCumshot_V1.0.safetensors
+    dest: /comfyui/models/loras/
+    auth_header_env: CIVITAI_TOKEN
+
+  # HMMisDog v1.5 (HearmemanAI) — civitai 2924146 / version 3356770.
+  - source: url
+    url: https://civitai.com/api/download/models/3356770
+    filename: HMMisDogV1.5.safetensors
+    dest: /comfyui/models/loras/
+    auth_header_env: CIVITAI_TOKEN
+
+  # Fingering Pussy v1.1_H3 (Generation3dX) — civitai 2007360 / version 3342542.
+  - source: url
+    url: https://civitai.com/api/download/models/3342542
+    filename: h3_base_fingering_v1.1-6000.safetensors
+    dest: /comfyui/models/loras/
+    auth_header_env: CIVITAI_TOKEN
+
+  # Blowjob Minimax H3 v3 (kermitfrog1202) — civitai 2845331 / version 3285598.
+  - source: url
+    url: https://civitai.com/api/download/models/3285598
+    filename: MM-H3_Blowjob_v3.safetensors
+    dest: /comfyui/models/loras/
+    auth_header_env: CIVITAI_TOKEN
+
+  # Steep Slope XXL MH3 (TeeKay) — civitai 942483 / version 3345150. Paid early access:
+  # the CIVITAI_TOKEN account must own it or the download 403s ("Early Access").
+  - source: url
+    url: https://civitai.com/api/download/models/3345150
+    filename: SteepSlopeTiddies_XXL_MH3.safetensors
+    dest: /comfyui/models/loras/
+    auth_header_env: CIVITAI_TOKEN
+
+output:
+  type: image

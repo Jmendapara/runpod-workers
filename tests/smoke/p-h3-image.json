@@ -1,0 +1,226 @@
+{
+  "_NOTE": "P-H3-Image text-to-image smoke (ComfyUI API format, official t2i template graph at 1024x1024 for speed; production renders 4 MP). Prompt upsampler on, its text returned via PreviewAny (texts[]). Mirrors pixel-dream/opensourcegen server/models/p-h3-image.js. Run: RUNPOD_API_KEY=... python tests/run_smoke.py p-h3-image <endpoint-id>",
+  "workflow": {
+    "unet_loader": {
+      "inputs": {
+        "unet_name": "minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+        "weight_dtype": "default"
+      },
+      "class_type": "UNETLoader",
+      "_meta": {
+        "title": "Load Diffusion Model"
+      }
+    },
+    "lora_ph3": {
+      "inputs": {
+        "model": [
+          "unet_loader",
+          0
+        ],
+        "lora_name": "p-h3-image_lora_bf16.safetensors",
+        "strength_model": 1.0
+      },
+      "class_type": "LoraLoaderModelOnly",
+      "_meta": {
+        "title": "P-H3-Image LoRA"
+      }
+    },
+    "sigma_shift": {
+      "inputs": {
+        "model": [
+          "lora_ph3",
+          0
+        ],
+        "shift_video": 1.0,
+        "shift_audio": 1.0
+      },
+      "class_type": "MiniMaxH3SigmaShift",
+      "_meta": {
+        "title": "ModelSamplingMiniMaxH3 (keep at 1.0)"
+      }
+    },
+    "clip_loader": {
+      "inputs": {
+        "clip_name": "p-h3-image_text_encoder_int8_convrot.safetensors",
+        "type": "minimax",
+        "device": "default"
+      },
+      "class_type": "CLIPLoader",
+      "_meta": {
+        "title": "Text encoder"
+      }
+    },
+    "upsampler_loader": {
+      "inputs": {
+        "clip_name": "p-h3-image_prompt_upsampler_w4a8.safetensors",
+        "type": "minimax",
+        "device": "default"
+      },
+      "class_type": "CLIPLoader",
+      "_meta": {
+        "title": "Prompt upsampler model"
+      }
+    },
+    "vae_loader": {
+      "inputs": {
+        "vae_name": "p-h3-image_vae_int8_convrot.safetensors"
+      },
+      "class_type": "VAELoader",
+      "_meta": {
+        "title": "Load VAE"
+      }
+    },
+    "upsample": {
+      "inputs": {
+        "clip": [
+          "upsampler_loader",
+          0
+        ],
+        "prompt": "Aspect ratio: 1:1\nRequest: a red fox sitting in fresh snow at dawn",
+        "max_length": 1536,
+        "sampling_mode": "off",
+        "thinking": true,
+        "use_default_template": true,
+        "mtp": "auto"
+      },
+      "class_type": "TextGenerateV2",
+      "_meta": {
+        "title": "Prompt upsampler"
+      }
+    },
+    "upsampled_preview": {
+      "inputs": {
+        "source": [
+          "upsample",
+          0
+        ]
+      },
+      "class_type": "PreviewAny",
+      "_meta": {
+        "title": "Upsampled prompt"
+      }
+    },
+    "conditioning": {
+      "inputs": {
+        "clip": [
+          "clip_loader",
+          0
+        ],
+        "vae": [
+          "vae_loader",
+          0
+        ],
+        "prompt": [
+          "upsample",
+          0
+        ],
+        "width": 1024,
+        "height": 1024
+      },
+      "class_type": "PH3ImageConditioning",
+      "_meta": {
+        "title": "p-h3-image Conditioning"
+      }
+    },
+    "guider": {
+      "inputs": {
+        "model": [
+          "sigma_shift",
+          0
+        ],
+        "conditioning": [
+          "conditioning",
+          0
+        ]
+      },
+      "class_type": "BasicGuider",
+      "_meta": {
+        "title": "BasicGuider"
+      }
+    },
+    "sampler_select": {
+      "inputs": {
+        "sampler_name": "er_sde"
+      },
+      "class_type": "KSamplerSelect",
+      "_meta": {
+        "title": "KSamplerSelect"
+      }
+    },
+    "noise": {
+      "inputs": {
+        "noise_seed": 42
+      },
+      "class_type": "RandomNoise",
+      "_meta": {
+        "title": "RandomNoise"
+      }
+    },
+    "sigmas": {
+      "inputs": {
+        "sigmas": "1.0, 0.984753, 0.967905, 0.951688, 0.925372, 0.881923, 0.810083, 0.528718, 0.0"
+      },
+      "class_type": "ManualSigmas",
+      "_meta": {
+        "title": "ManualSigmas"
+      }
+    },
+    "sampler": {
+      "inputs": {
+        "noise": [
+          "noise",
+          0
+        ],
+        "guider": [
+          "guider",
+          0
+        ],
+        "sampler": [
+          "sampler_select",
+          0
+        ],
+        "sigmas": [
+          "sigmas",
+          0
+        ],
+        "latent_image": [
+          "conditioning",
+          1
+        ]
+      },
+      "class_type": "SamplerCustomAdvanced",
+      "_meta": {
+        "title": "SamplerCustomAdvanced"
+      }
+    },
+    "vae_decode": {
+      "inputs": {
+        "samples": [
+          "sampler",
+          0
+        ],
+        "vae": [
+          "vae_loader",
+          0
+        ]
+      },
+      "class_type": "VAEDecode",
+      "_meta": {
+        "title": "VAE Decode"
+      }
+    },
+    "save": {
+      "inputs": {
+        "filename_prefix": "p-h3-image",
+        "images": [
+          "vae_decode",
+          0
+        ]
+      },
+      "class_type": "SaveImage",
+      "_meta": {
+        "title": "Save Image"
+      }
+    }
+  }
+}

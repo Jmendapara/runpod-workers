@@ -150,7 +150,7 @@ def handler(job):
     has_output = any(
         isinstance(v, list) and v
         for k, v in final.items()
-        if k != "errors"
+        if k not in ("errors", "texts")
     )
     if not has_output:
         if final.get("errors"):

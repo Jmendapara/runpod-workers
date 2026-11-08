@@ -163,7 +163,15 @@ class CollectorSet:
                         # require a worker redeploy. The worker only uploads the original.
                         result.setdefault(collector.result_key, []).append(item)
 
-            other_keys = [k for k in node_output.keys() if k not in handled_keys]
+            # Text previews (PreviewAny → ui {"text": [...]}) ride along as plain strings, e.g.
+            # the prompt a model's prompt upsampler wrote. Never counted as an output.
+            texts = node_output.get("text")
+            if isinstance(texts, list):
+                for t in texts:
+                    if isinstance(t, str) and t:
+                        result.setdefault("texts", []).append({"node_id": str(node_id), "text": t[:8000]})
+
+            other_keys = [k for k in node_output.keys() if k not in handled_keys and k != "text"]
             if other_keys:
                 print(
                     f"worker-comfyui - WARNING: Node {node_id} produced unhandled keys: {other_keys}",
