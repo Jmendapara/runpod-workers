@@ -33,7 +33,7 @@ import yaml
 from hf_cache import DEFAULT_MIN_FREE_GB, make_room
 from r2 import download_to_file, make_client, resolve_bucket_target, upload_file
 from run_log import RunLog, url_secrets
-from trainer_config import checkpoints_ready, STEP_RE, build_config, caption_for, parse_progress_line, pick_output_loras, previews_ready, sample_step_of, validate_input
+from trainer_config import arch_env, checkpoints_ready, STEP_RE, build_config, caption_for, parse_progress_line, pick_error_line, pick_output_loras, previews_ready, sample_step_of, validate_input
 
 AI_TOOLKIT_DIR = os.environ.get("AI_TOOLKIT_DIR", "/app/ai-toolkit")
 JOBS_ROOT = os.environ.get("TRAINER_JOBS_ROOT", "/workspace/jobs")
@@ -584,6 +584,10 @@ def train(job, run):
             env["HF_TOKEN"] = spec["hf_token"]
             env["HUGGING_FACE_HUB_TOKEN"] = spec["hf_token"]
         env.pop("hf_token", None)
+        extra_env = arch_env(spec["model"]["arch"])
+        if extra_env:
+            env.update(extra_env)
+            log(f"arch env: {extra_env}")
 
         progress.set_phase("loading", "Loading the base model")
         progress.push(force=True)
@@ -638,7 +642,7 @@ def train(job, run):
             log(f"ai-toolkit exited with {rc} after the last step; keeping the saved LoRA")
         elif rc != 0:
             log(f"ai-toolkit exited with {rc}")
-            err_line = next((l for l in reversed(tail) if "Error" in l or "error" in l or "Exception" in l), None)
+            err_line = pick_error_line(tail)
             code = "oom" if any("out of memory" in l.lower() for l in tail) else "training_failed"
             failed = {
                 "error": (err_line or f"Training process exited with code {rc}")[:500],

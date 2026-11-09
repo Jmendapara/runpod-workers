@@ -25,9 +25,11 @@ Tag pushed: `jmendapara/lora-trainer-runpod-worker:YYYY-MM-DD-HHMM-<sha>`.
   All the catalog's models together don't fit in 200 GB, so before each job the handler removes the models
   used longest ago until 120 GB is free (`TRAINER_MIN_FREE_GB`, `hf_cache.py`). A worker whose job still
   runs out of disk asks to be replaced, since it would fail every job it picks up next.
-- Known issue (2026-11-04): `flux-1-dev` fails on an H200 at step 0–1 with `CUDA error: an illegal memory
-  access` (4 of 4 runs, 2 workers). It passes on an RTX PRO 6000. On the H200, `flux-2-klein-9b`, `chroma`,
-  `z-image-turbo`, `qwen-image-2-1` and `sd-1-5` pass; the other models and the H100 pool are untested there.
+- `flux-1-dev` used to crash on H100 and H200 at step 0 with `CUDA error: an illegal memory access`, in the cuDNN
+  attention backend PyTorch 2.13 prefers on SM 9.x and 10.x chips. The handler now sets
+  `TORCH_CUDNN_SDPA_DEPRIORITIZED=1` for `arch: flux` only (`ARCH_ENV` in `trainer_config.py`). Tested 2026-11-09 on
+  H100 80GB HBM3, H100 NVL and H200. Before the fix, `flux-2-klein-9b`, `chroma`, `z-image-turbo`, `qwen-image-2-1`
+  and `sd-1-5` passed on the H200 with no change; the other models are untested there.
 - Network volume: 300–500 GB STANDARD, `/runpod-volume`. Pins the endpoint to the volume's data center.
 - Workers min 0 / max 2–3. FlashBoot off (the image is ~25 GB and there is nothing to keep warm).
 - Execution timeout: the server sends `policy.executionTimeout` per job (3× the estimate + 30 min, capped at
