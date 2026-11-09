@@ -94,6 +94,30 @@ currently `lora-trainer` (ostris/ai-toolkit LoRA training for OpenSourceGen's Tr
 `trainers/lora-trainer/README.md`). Build them the same way: `./tools/remote-build.sh lora-trainer`
 or `MODEL=lora-trainer bash build.sh` (repo-root context, no shared base image).
 
+## Picking the GPU pool(s) for a new model — cheapest per JOB, measured
+
+Rule (Nov 2026): every new endpoint lists **every pool the model fits in, cheapest-per-job
+first**, with the dearer pools kept as capacity fallbacks. `gpuTypeIds` order is the RunPod
+scheduler's preference and billing follows the GPU actually used, so this is a free lever.
+$/h is misleading: A6000/A40 ($1.22/h) run Qwen 2.1 twice as slow as a 4090 ($1.34/h) and end
+up the most expensive pool per image; RTX PRO 6000 ($3.49/h) beats H100 ($5.39/h) per job on
+every video model tested (MiniMax −58 %, 10eros −55 %, LTX −27 %, Hunyuan −19 %).
+
+```bash
+export RUNPOD_API_KEY=...
+# clone an existing endpoint's template onto one temp endpoint per pool, run N jobs each, delete them
+python tests/gpu_pool_bench.py --from-endpoint <endpoint-id> --payload tests/smoke/<model>.json \
+    --pools 4090,5090,ada48,amp48,pro6000 --n 6 --override KSampler.steps=25
+# or compare endpoints that already exist
+python tests/gpu_pool_bench.py --endpoints h100=<id>,pro6000=<id> --payload tests/smoke/<model>.json
+python tests/gpu_pool_bench.py --list-pools      # pool names, VRAM, $/h (re-check prices; --rate pool=x)
+```
+
+The summary prints $/job per pool and a ready-to-paste `gpuTypeIds` array. Before listing a
+small-VRAM pool first, also run the heaviest shape prod allows on it (max resolution, edit /
+reference-image workflow, LoRAs) — an OOM there demotes that pool. Results and the method are
+written up in `opensourcegen/docs/gpu-infra-cost-plan.md`.
+
 ## Layout
 
 ```
