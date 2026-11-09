@@ -246,6 +246,7 @@ def delete_endpoints(ids):
         for attempt in range(4):
             try:
                 api("PATCH", f"{REST}/endpoints/{eid}", {"workersMin": 0, "workersMax": 0})
+                time.sleep(8)  # DELETE 500s while the last worker is still winding down
                 api("DELETE", f"{REST}/endpoints/{eid}")
                 print(f"deleted {eid}")
                 break
