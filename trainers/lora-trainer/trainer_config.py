@@ -361,6 +361,36 @@ def caption_for(item: dict, trigger_word: str | None, default_caption: str | Non
     return cap or (trig or "")
 
 
+# Worker environment ----------------------------------------------------------------------------
+
+# PyTorch 2.13 prefers its cuDNN attention backend on SM 9.x and 10.x chips (H100, H200). FLUX.1 dev crashes there in
+# its first backward pass with "an illegal memory access", quantized or not. This variable moves it to flash attention,
+# which the RTX PRO 6000 already uses. It is set per architecture so that no other model changes backend.
+ARCH_ENV = {"flux": {"TORCH_CUDNN_SDPA_DEPRIORITIZED": "1"}}
+
+
+def arch_env(arch: str) -> dict[str, str]:
+    """Environment variables this architecture needs in the ai-toolkit process."""
+    return dict(ARCH_ENV.get(arch, {}))
+
+
+# What PyTorch prints right after a CUDA exception. These contain the word "error" but don't say what went wrong.
+CUDA_ERROR_BOILERPLATE = (
+    "CUDA kernel errors might be asynchronously reported",
+    "Search for `cudaError",
+)
+
+
+def pick_error_line(tail: list[str]) -> str | None:
+    """The last log line that reports an error, skipping PyTorch's generic lines after a CUDA exception."""
+    for line in reversed(tail):
+        if any(text in line for text in CUDA_ERROR_BOILERPLATE):
+            continue
+        if "Error" in line or "error" in line or "Exception" in line:
+            return line
+    return None
+
+
 # Progress parsing ------------------------------------------------------------------------------
 
 STEP_RE = re.compile(r"(\d+)/(\d+)\s*\[")

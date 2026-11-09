@@ -11,7 +11,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "trainers", "lo
 
 from run_log import RunLog, url_secrets  # noqa: E402
 from trainer_config import (  # noqa: E402
+    arch_env,
     checkpoints_ready,
+    pick_error_line,
     pick_output_loras,
     _sample_every, build_config, caption_for, parse_progress_line, previews_ready, slugify, validate_input,
 )
@@ -287,6 +289,44 @@ class CheckpointTests(unittest.TestCase):
         self.assertEqual(pick_output_loras(names, "rex"), [(None, "rex.safetensors")])
         wan = ["rex_000000250_high_noise.safetensors", "rex_000000250_low_noise.safetensors", "rex_high_noise.safetensors", "rex_low_noise.safetensors"]
         self.assertEqual(pick_output_loras(wan, "rex"), [("high", "rex_high_noise.safetensors"), ("low", "rex_low_noise.safetensors")])
+
+
+class WorkerEnvTests(unittest.TestCase):
+    def test_flux_moves_off_cudnn_attention(self):
+        self.assertEqual(arch_env("flux"), {"TORCH_CUDNN_SDPA_DEPRIORITIZED": "1"})
+
+    def test_other_architectures_are_unchanged(self):
+        for arch in ("flux2_klein_9b", "chroma", "zimage", "qwen_image_2", "krea2", "sdxl", "sd1", "wan22_14b"):
+            self.assertEqual(arch_env(arch), {}, arch)
+
+    def test_callers_cannot_change_the_table(self):
+        arch_env("flux")["TORCH_CUDNN_SDPA_DEPRIORITIZED"] = "0"
+        self.assertEqual(arch_env("flux")["TORCH_CUDNN_SDPA_DEPRIORITIZED"], "1")
+
+
+class PickErrorLineTests(unittest.TestCase):
+    def test_reports_the_exception_not_the_lines_pytorch_prints_after_it(self):
+        exception = "torch.AcceleratorError: CUDA error: an illegal memory access was encountered"
+        tail = [
+            'File "/opt/venv/lib/python3.12/site-packages/torch/autograd/graph.py", line 979, in _engine_run_backward',
+            exception,
+            "Search for `cudaErrorIllegalAddress' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.",
+            "CUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.",
+            "For debugging consider passing CUDA_LAUNCH_BLOCKING=1",
+        ]
+        self.assertEqual(pick_error_line(tail), exception)
+
+    def test_other_failures_still_report_their_last_error_line(self):
+        tail = ["loading", "OSError: first", "huggingface_hub.errors.GatedRepoError: 403 Client Error.", "Access to model x is restricted"]
+        self.assertEqual(pick_error_line(tail), "huggingface_hub.errors.GatedRepoError: 403 Client Error.")
+
+    def test_a_cudnn_failure_keeps_its_own_line(self):
+        line = "RuntimeError: Expected mha_graph.execute(handle, variant_pack, workspace_ptr.get()).is_good() to be true, but got false.  (Could this error message be improved?  If so, please report an enhancement request to PyTorch.)"
+        self.assertEqual(pick_error_line([line, "For debugging consider passing CUDA_LAUNCH_BLOCKING=1"]), line)
+
+    def test_nothing_to_report(self):
+        self.assertIsNone(pick_error_line(["Running 1 process", "Done"]))
+        self.assertIsNone(pick_error_line([]))
 
 
 class RunLogTests(unittest.TestCase):
