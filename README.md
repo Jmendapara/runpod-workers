@@ -307,7 +307,8 @@ their siblings minus anything the desktop app must never ship:
 |---|---|
 | `z-image-turbo-cozy` | nothing (adds the CharacterDesign LoRA) |
 | `qwen-image-2-1-cozy` | the three NSFW LoRAs (keeps the tiled-upscale nodes + Restore / Viggle Turbo LoRAs) |
-| `minimax-h3-cozy` | the NSFW Unlocked LoRA (adds fal realism-people) |
+| `minimax-h3-cozy` | the NSFW Unlocked LoRA (adds fal realism-people and the RelayVSR x2 upscaler weights) |
+| `minimax-h3-image-cozy` | the unused int8 text encoder (27.1 GB) and Qwen3.5-9B prompt expander (7.3 GB): the graph loads the int8 DiT, the nvfp4 text encoder and the VAE only (≈ 38 GB) |
 | `krea-2-turbo-cozy` | the NSFW v4.3, Mystic XXX and SNOFS LoRAs |
 | `ltx-2.3-cozy` | the Extend Video and LipDub sets (weights, node packs, post_install) and the full distilled checkpoint — only the T2V / I2V set stays |
 | `ideogram-4-cozy`, `pixel-dit-cozy`, `scail-2-cozy`, `wan-animate-cozy`, `omni-cozy`, `ace-step-1.5-cozy` | nothing — same contents, `-cozy` name so the app pins its own tags |
@@ -316,6 +317,17 @@ Build the variants whose shared image is still on the cu128 base with
 `BASE_TAG=2026-07-07-1526-510c57c` (see "Base image compatibility"): every
 `-cozy` variant except `z-image-turbo-cozy`, `qwen-image-2-1-cozy` and
 `minimax-h3-cozy`, which run on the cu130 base.
+
+`minimax-h3-cozy` and `minimax-h3-image-cozy` need ComfyUI >= 0.45.0 (`MiniMaxH3ImageConditioning`,
+`RelayVSRConditioning` / `VSRDecode`): build them with `--base-tag 2026-11-12-0414-394d2d2` (the cu130
+base with ComfyUI 0.45.0). There is no separate CozyGPU base image: the base Dockerfile is the shared one,
+and the CozyGPU handler (volume mode) ships in every model image through build.sh's
+`.worker-runtime` overlay (handler.py, network_volume.py, start.sh, apply_model_config.py, lib/).
+With `IMAGE_NAMESPACE=cozygpu` always pass `--base-tag` — base auto-discovery looks under the
+namespace, and there is no `cozygpu/runpod-worker-base`.
+
+Sizing: `minimax-h3-image-cozy` container disk 60 GB, `minCudaVersion` 13.0 (≈ 10.5 GB base + 38 GB
+weights); `minimax-h3-cozy` container disk 120 GB, `minCudaVersion` 13.0.
 
 Unit tests: `python3 tests/test_inputs.py` and `python3 tests/test_collectors_volume.py`.
 

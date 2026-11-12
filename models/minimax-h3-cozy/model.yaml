@@ -4,6 +4,10 @@
 # and multiframe reference (chained MiniMaxH3AddGuide), all with native stereo audio
 # (https://docs.comfy.org/tutorials/video/minimax/minimax-h3).
 # Plus fal/MiniMax-H3-Realism-People-LoRA (SFW, trigger r34l1sm) as the built-in realism pick.
+# Plus the RelayVSR x2 weights (render small, then upscale x2; 2026-11-12). REQUIREMENTS: a CUDA 13 base with
+# ComfyUI >= v0.45.0 — the first tagged release with the core RelayVSRConditioning / VSRDecode nodes
+# (Comfy-Org/ComfyUI#17511; v0.45.0 contains master bdb0816, the commit feature/relayvsr overlaid). So no
+# ComfyUI overlay post_install here: build with --base-tag 2026-11-12-0414-394d2d2 (jmendapara/runpod-worker-base).
 name: minimax-h3-cozy
 # Output frame rate (CozyGPU settings.fps 24/30/50/60, default 30): the model renders 24 fps; higher rates run
 # core FrameInterpolate (RIFE v4.26, x5 -> 120 fps) and then VHS_SelectImages keeps the target-rate frames before
@@ -49,5 +53,17 @@ model_downloads:
   repo_id: Comfy-Org/frame_interpolation
   filename: frame_interpolation/rife_v4.26.safetensors
   dest: /comfyui/models/frame_interpolation/
+# ----- RelayVSR x2 (render small + upscale; hosted graph: server/models/minimax-h3.js `upscale` option,
+# 640p render → RIFE on the small frames → UNETLoader + RelayVSRConditioning + KSampler 1 step → VSRDecode x2,
+# detail 0.33) ----- Comfy-Org/RelayVSR (Apache-2.0): a one-step Wan2.2-5B pass on every 15th frame + a
+# per-frame Flash decoder; the x2 LightX2V retrain, int8 convrot (5.16 GB) + its fp32 Flash decoder (128 MB).
+- source: hf
+  repo_id: Comfy-Org/RelayVSR
+  filename: diffusion_models/relayvsr_x2_lightx2v_int8_convrot.safetensors
+  dest: /comfyui/models/diffusion_models/
+- source: hf
+  repo_id: Comfy-Org/RelayVSR
+  filename: vae/relayvsr_flash_vae_x2_fp32.safetensors
+  dest: /comfyui/models/vae/
 output:
   type: video

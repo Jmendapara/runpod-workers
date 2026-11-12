@@ -1,0 +1,54 @@
+name: minimax-h3-image-cozy
+
+# CozyGPU desktop variant of models/minimax-h3-image (feature/minimax-h3-image, 6047d94): MiniMax-H3-Image
+# text-to-image AND 1..10-picture edit, slimmed to the three files the app's graph loads.
+#
+# Graph (opensourcegen / pixel-dream server/models/minimax-h3-image.js, ported to CozyGPU):
+#   UNETLoader(minimax_h3_image_pruned_int8_convrot) + CLIPLoader(qwen3vl_32b_minimax_h3_nvfp4_awq,
+#   type=minimax) + VAELoader(minimax_h3_image_vae_fp16) → MiniMaxH3ImageConditioning(prompt, width,
+#   height, vae, images.image_1..N) → ConditioningZeroOut negative → KSampler 6 steps / cfg 1 /
+#   euler / simple → VAEDecode → SaveImage. Edit pictures: LoadImage → ImageScaleToTotalPixels.
+#   Every node is ComfyUI CORE; no custom nodes, no LoRAs.
+#
+# Removed vs models/minimax-h3-image (≈ 34.5 GB smaller):
+#   * text_encoders/qwen3vl_32b_minimax_h3_int8_convrot.safetensors (27.14 GB) — the builder's
+#     DEFAULT_TEXT_ENCODER is nvfp4; int8 is only reachable through a hosted-server env override
+#     (MINIMAX_H3_IMAGE_TEXT_ENCODER=int8).
+#   * text_encoders/qwen3.5_9b_w4a8_gptq.safetensors (7.34 GB) — the in-graph TextGenerateV2 prompt
+#     expander only runs with options.expand, which no caller sets (it lost the 2026-11-12 A/B; the
+#     app writes the prompt with its own LLM).
+#   If a graph ever names either file, ComfyUI fails validation with "Value not in list: clip_name".
+#
+# REQUIREMENTS: a base built with ComfyUI >= v0.45.0 (MiniMaxH3ImageConditioning, released
+# 2026-11-10) on CUDA 13 (int8_convrot / nvfp4 need comfy-kitchen's CUDA kernels): build with
+# --base-tag 2026-11-12-0414-394d2d2 (jmendapara/runpod-worker-base, ComfyUI 0.45.0, cu130).
+# The CozyGPU handler (volume mode) ships in the model layer (build.sh overlays base/runtime + base/lib).
+#
+# Sizing: ≈ 38 GB of weights (DiT 21 + text encoder 15.7 + VAE 1.2), all resident for one job.
+#
+# LICENSE: MiniMax-H3-Image Community License Agreement — > $1M annualized revenue or a Hosted
+# Service to third parties needs MiniMax's prior written authorization. Operator's responsibility.
+
+model_downloads:
+  # All public on Hugging Face — no HUGGINGFACE_ACCESS_TOKEN needed.
+
+  # Diffusion model — MiniMax-H3-Image DiT, pruned, int8 convrot. 20.98 GB.
+  - source: hf
+    repo_id: Comfy-Org/MiniMax-H3-Image
+    filename: diffusion_models/minimax_h3_image_pruned_int8_convrot.safetensors
+    dest: /comfyui/models/diffusion_models/
+
+  # Text encoder — Qwen3-VL 32B (the MiniMax-H3 encoder), nvfp4 AWQ. 15.69 GB. CLIPLoader type=minimax.
+  - source: hf
+    repo_id: Comfy-Org/MiniMax-H3-Image
+    filename: text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors
+    dest: /comfyui/models/text_encoders/
+
+  # Image VAE, fp16. 1.17 GB.
+  - source: hf
+    repo_id: Comfy-Org/MiniMax-H3-Image
+    filename: vae/minimax_h3_image_vae_fp16.safetensors
+    dest: /comfyui/models/vae/
+
+output:
+  type: image
