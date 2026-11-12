@@ -326,8 +326,12 @@ and the CozyGPU handler (volume mode) ships in every model image through build.s
 With `IMAGE_NAMESPACE=cozygpu` always pass `--base-tag` — base auto-discovery looks under the
 namespace, and there is no `cozygpu/runpod-worker-base`.
 
-Sizing: `minimax-h3-image-cozy` container disk 60 GB, `minCudaVersion` 13.0 (≈ 10.5 GB base + 38 GB
-weights); `minimax-h3-cozy` container disk 120 GB, `minCudaVersion` 13.0.
+Built 2026-11-12 (commit 8f1bd43, base `2026-11-12-0414-394d2d2`, ComfyUI 0.45.0, torch 2.14.1+cu130):
+
+| Image | Pull (compressed) | On disk | Container disk | `minCudaVersion` |
+|---|---|---|---|---|
+| `cozygpu/minimax-h3-image-cozy-runpod-worker:2026-11-12-1534-8f1bd43` | 44.4 GB (hosted image: 74.8 GB) | 54 GB | 70 GB | 13.0 |
+| `cozygpu/minimax-h3-cozy-runpod-worker:2026-11-12-1604-8f1bd43` | 74.4 GB | 86 GB | 120 GB | 13.0 |
 
 Unit tests: `python3 tests/test_inputs.py` and `python3 tests/test_collectors_volume.py`.
 
