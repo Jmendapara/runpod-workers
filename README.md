@@ -137,6 +137,7 @@ curl -fsSL .../build.sh | CUDA_BASE_IMAGE=nvidia/cuda:12.8.1-cudnn-runtime-ubunt
 |---|---|---|
 | `qwen-image-2-1` | cu130 base `2026-09-22-0516-9e98cc5` or later | Needs ComfyUI >= 0.37.0 (`TextEncodeQwenImage21` / `QwenImage21Cache`, released 2026-09-21). int8_convrot weights need CUDA 13 for the comfy-kitchen kernels; on cu128 they hit the slow dequant fallback |
 | `minimax-h3` | cu130 base built from a Dockerfile that installs `gcc` + `libc6-dev` (2026-09-22 or later) | Needs ComfyUI >= 0.30.0. Triton JIT-compiles kernel launchers at runtime; without a C compiler the MiniMax node fails with "Failed to find C compiler" |
+| `minimax-h3-image` | cu130 base built with ComfyUI 0.45.0 or later | `MiniMaxH3ImageConditioning` landed in ComfyUI v0.45.0 (2026-11-10). int8_convrot / nvfp4 / w4a8 weights need CUDA 13 |
 | `scail-2` | **pin `BASE_TAG=2026-07-07-1526-510c57c`** until validated on cu130 | `extra_pip: cupy-cuda12x` → needs `cupy-cuda13x` on a cu130 base |
 | `wan-2-2-video` | cu130 base | All nodes are ComfyUI core (`WanImageToVideo`, `FrameInterpolate`, `SaveVideo`). Separate from `wan-animate` |
 | `wan-animate` | **pin `BASE_TAG=2026-07-07-1526-510c57c`** until validated on cu130 | `onnxruntime-gpu` is pinned for CUDA 12.8 (commit 17d0400); needs a CUDA 13 build |
@@ -210,6 +211,17 @@ nvfp4 text encoder, both VAEs, both turbo LoRAs). Suggested RunPod serverless se
 - License: MiniMax H3 weights are under the minimax-h3-community-license-agreement;
   Comfy states commercial use of locally generated outputs needs a MiniMax
   commercial license (sold via Comfy).
+
+## minimax-h3-image endpoint sizing
+
+- One endpoint for text-to-image and 1–10 picture edits (pixel-dream + opensourcegen
+  `server/models/minimax-h3-image.js`). Weights ≈ 72 GB (int8 DiT 21, Qwen3-VL 32B text encoder
+  nvfp4 15.7 + int8 27.1, Qwen3.5-9B expander 7.3, VAE 1.2): container disk 120 GB, `minCudaVersion` 13.0.
+- GPU pools: measured with `tests/gpu_pool_bench.py` — see opensourcegen `docs/gpu-infra-cost-plan.md`.
+- Smoke: `tests/smoke/minimax-h3-image.json` (4 MP t2i) and `tests/smoke/minimax-h3-image.edit.json`
+  (one-picture edit, inline base64).
+- License: MiniMax-H3-Image Community License — a Hosted Service for third parties or > $1M
+  annualized revenue needs MiniMax's prior written authorization.
 
 ## qwen-image-2-1 endpoint sizing
 

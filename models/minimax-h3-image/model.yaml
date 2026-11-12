@@ -1,0 +1,73 @@
+name: minimax-h3-image
+
+# MiniMax-H3-Image (MiniMaxAI, https://huggingface.co/MiniMaxAI/MiniMax-H3-Image) — ONE
+# checkpoint for text-to-image AND image editing with 1..N reference pictures (<Picture 1>,
+# <Picture 2>, … in the prompt; the model card supports up to 16). Repackaged for ComfyUI
+# by Comfy-Org (https://huggingface.co/Comfy-Org/MiniMax-H3-Image; graphs follow the official
+# templates image_minimax_h3_image_t2i.json / image_minimax_h3_image_edit.json):
+#
+#   UNETLoader(int8 DiT) + CLIPLoader(Qwen3-VL 32B, type=minimax) + VAELoader
+#   [TextGenerateV2 prompt expander (Qwen3.5-9B w4a8) → JsonExtractString expanded_caption]
+#   MiniMaxH3ImageConditioning(prompt, width, height, vae, images.image_1..N) → positive + LATENT
+#   ConditioningZeroOut → negative; KSampler 6 steps, cfg 1, euler / simple → VAEDecode
+#
+# Distilled to 6 steps, no CFG, no negative prompt. Works from ~4 MP (the node's default
+# canvas is 2048x2048) up to ~20 MP; the apps render 4 MP.
+#
+# Every node is ComfyUI CORE. REQUIREMENTS:
+#   * a base image built with ComfyUI >= v0.45.0 (MiniMaxH3ImageConditioning landed in
+#     v0.45.0, released 2026-11-10). Symptom on an older base:
+#     "Node 'MiniMaxH3ImageConditioning' not found".
+#   * the CUDA 13 base: the int8_convrot / nvfp4 / w4a8 weights need comfy-kitchen's CUDA
+#     kernels, which ComfyUI disables on cu128 (slow dequant).
+# Graphs are built server-side (pixel-dream + opensourcegen server/models/minimax-h3-image.js);
+# edit pictures arrive as r2_inputs targeting LoadImage nodes. The apps write the prompt with
+# their own LLM (MiniMax's prompt-expansion guides); the in-graph expander is the fallback,
+# its text comes back as the worker's texts[] (PreviewAny).
+#
+# LICENSE: MiniMax-H3-Image Community License Agreement. Unlike the MiniMax H3 license it
+# requires a separate, prior written authorization from MiniMax for anyone with > $1M
+# annualized revenue OR providing a Hosted Service to third parties
+# (https://platform.minimax.io/console/license). Operator's responsibility.
+#
+# Sizing: ~72 GB of weights. Resident for one job: DiT 21 + text encoder 15.7 (nvfp4) or
+# 27.1 (int8) + VAE 1.2 (+ expander 7.3 when the fallback runs). Both text encoders are baked
+# so the apps can pick per GPU pool (QWEN TE file is a graph parameter).
+
+model_downloads:
+  # All Hugging Face files are public — no HUGGINGFACE_ACCESS_TOKEN needed.
+
+  # Diffusion model — MiniMax-H3-Image DiT, pruned, int8 convrot. 20.98 GB.
+  - source: hf
+    repo_id: Comfy-Org/MiniMax-H3-Image
+    filename: diffusion_models/minimax_h3_image_pruned_int8_convrot.safetensors
+    dest: /comfyui/models/diffusion_models/
+
+  # Text encoder — the MiniMax-H3 Qwen3-VL 32B encoder, unchanged. Two quantizations:
+  # int8 convrot (27.14 GB, the official template's pick) and nvfp4 AWQ (15.69 GB, the one
+  # the minimax-h3 video worker runs; leaves room for the DiT on a 48 GB card).
+  - source: hf
+    repo_id: Comfy-Org/MiniMax-H3-Image
+    filename: text_encoders/qwen3vl_32b_minimax_h3_int8_convrot.safetensors
+    dest: /comfyui/models/text_encoders/
+
+  - source: hf
+    repo_id: Comfy-Org/MiniMax-H3-Image
+    filename: text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors
+    dest: /comfyui/models/text_encoders/
+
+  # Prompt expander for the in-graph fallback (TextGenerateV2) — Qwen3.5-9B w4a8 GPTQ, 7.34 GB.
+  # The templates' pick (MiniMax's own PE model is a 27B NVFP4 Qwen fine-tune, not repackaged).
+  - source: hf
+    repo_id: Comfy-Org/MiniMax-H3-Image
+    filename: text_encoders/qwen3.5_9b_w4a8_gptq.safetensors
+    dest: /comfyui/models/text_encoders/
+
+  # Image VAE, fp16. 1.17 GB.
+  - source: hf
+    repo_id: Comfy-Org/MiniMax-H3-Image
+    filename: vae/minimax_h3_image_vae_fp16.safetensors
+    dest: /comfyui/models/vae/
+
+output:
+  type: image

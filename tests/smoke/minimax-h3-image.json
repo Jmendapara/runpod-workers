@@ -1,0 +1,121 @@
+{
+  "_NOTE": "MiniMax-H3-Image text-to-image smoke (ComfyUI API format, the apps' graph from server/models/minimax-h3-image.js): 4 MP 1:1, 6 steps, prompt = the official expanded example (examples/revised_prompt.t2i.txt), nvfp4 text encoder. Swap CLIPLoader.clip_name to qwen3vl_32b_minimax_h3_int8_convrot.safetensors for the int8 encoder.",
+  "workflow": {
+    "unet_loader": {
+      "inputs": {
+        "unet_name": "minimax_h3_image_pruned_int8_convrot.safetensors",
+        "weight_dtype": "default"
+      },
+      "class_type": "UNETLoader",
+      "_meta": {
+        "title": "Load Diffusion Model"
+      }
+    },
+    "clip_loader": {
+      "inputs": {
+        "clip_name": "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+        "type": "minimax",
+        "device": "default"
+      },
+      "class_type": "CLIPLoader",
+      "_meta": {
+        "title": "Text encoder"
+      }
+    },
+    "vae_loader": {
+      "inputs": {
+        "vae_name": "minimax_h3_image_vae_fp16.safetensors"
+      },
+      "class_type": "VAELoader",
+      "_meta": {
+        "title": "Load VAE"
+      }
+    },
+    "conditioning": {
+      "inputs": {
+        "clip": [
+          "clip_loader",
+          0
+        ],
+        "prompt": "The image is an overhead, top-down photograph of a rustic farm-to-table feast spread across a weathered, dark brown wooden table with visible grain, knots, and a worn finish. In the center, a large woven basket holds a freshly baked rustic loaf of bread with a cracked golden-brown crust and scattered flour, alongside a halved loaf. To the left, a large dark ceramic plate presents an assortment of colorful seasonal vegetables, including bright orange carrots, deep red heirloom tomatoes, purple cabbage, and a mound of vibrant green leafy kale and arugula. On the right side, a wooden board displays artisanal cheeses: a wedge of sharp aged cheddar, a round of creamy brie with a rind, a soft blue cheese, and a few scattered almonds and walnuts. Below the bread in the lower center, a shallow bowl contains roasted root vegetables, including golden potatoes and beets, sprinkled with fresh rosemary sprigs. At the upper right, a glass jar of golden olive oil stands beside a smaller jar of honey with a wooden dipper. In the lower left, a rustic cloth napkin holds a silver knife and fork. At the upper left, a bunch of purple and red grapes rests near a small bowl of black olives. Scattered herbs, including fresh thyme and sprigs of oregano, decorate the table. The lighting is natural and warm, coming from the upper left and casting soft, long shadows to the lower right, enhancing the texture of the bread, the moisture of the vegetables, and the overall cozy, bountiful atmosphere of the meal.",
+        "width": 2048,
+        "height": 2048
+      },
+      "class_type": "MiniMaxH3ImageConditioning",
+      "_meta": {
+        "title": "MiniMax H3 Image Conditioning"
+      }
+    },
+    "negative": {
+      "inputs": {
+        "conditioning": [
+          "conditioning",
+          0
+        ]
+      },
+      "class_type": "ConditioningZeroOut",
+      "_meta": {
+        "title": "ConditioningZeroOut"
+      }
+    },
+    "sampler": {
+      "inputs": {
+        "model": [
+          "unet_loader",
+          0
+        ],
+        "positive": [
+          "conditioning",
+          0
+        ],
+        "negative": [
+          "negative",
+          0
+        ],
+        "latent_image": [
+          "conditioning",
+          1
+        ],
+        "seed": 42,
+        "steps": 6,
+        "cfg": 1,
+        "sampler_name": "euler",
+        "scheduler": "simple",
+        "denoise": 1
+      },
+      "class_type": "KSampler",
+      "_meta": {
+        "title": "KSampler (6 steps, no CFG)"
+      }
+    },
+    "vae_decode": {
+      "inputs": {
+        "samples": [
+          "sampler",
+          0
+        ],
+        "vae": [
+          "vae_loader",
+          0
+        ]
+      },
+      "class_type": "VAEDecode",
+      "_meta": {
+        "title": "VAE Decode"
+      }
+    },
+    "save": {
+      "inputs": {
+        "filename_prefix": "minimax-h3-image",
+        "images": [
+          "vae_decode",
+          0
+        ]
+      },
+      "class_type": "SaveImage",
+      "_meta": {
+        "title": "Save Image"
+      }
+    }
+  }
+}
