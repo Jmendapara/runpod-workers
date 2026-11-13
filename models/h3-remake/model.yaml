@@ -1,4 +1,13 @@
 name: h3-remake
+# Two opensourcegen tools run on this image (one endpoint, H3_REMAKE_ENDPOINT):
+#   Remake Video  Openjutsu's one-click person swap (graph server/workflows/graphs/remake-video.json): SAM 3.1
+#                 tracks the person, a grey mannequin of them is the motion reference, the photo is <Picture 1>,
+#                 H3 ref2va + DMAD regenerates only their mask, Context Loop chains 6 s clips. Nodes + models
+#                 under "Openjutsu masked swap" below.
+#   Remake Scene  Viggle Remake's edit transformer (graph server/workflows/graphs/remake-scene.json), below.
+#                 The swap transformer is no longer used by the app (people go through Remake Video); it can be
+#                 dropped from model_downloads at the next rebuild (-21 GB).
+#
 # H3 Remake: video-to-video on MiniMax H3 with Viggle Remake (https://huggingface.co/Viggle/Viggle-Remake).
 # The source clip's motion, camera, timing and soundtrack are kept; one to four "painted frames"
 # (frames of the source repainted in an image editor) decide what changes. Two modes, one merged
@@ -6,7 +15,7 @@ name: h3-remake
 #   swap  replace people and characters (one or several), their outfits too
 #   edit  everything else: swap, remove or insert objects, change the background, weather, light or style
 #
-# Graph (built by opensourcegen server/workflows/graphs/video-remake.json):
+# Remake graph (opensourcegen server/workflows/graphs/remake-scene.json):
 #   VHS_LoadVideo (force_rate 24, sized to the canvas) -> RemakeConditioning (+ painted frames, pins,
 #   six-section prompt, the source soundtrack held clean) -> UNETLoader(int8 merged) -> RemakeKeyframeUntil
 #   (0.9) -> BasicGuider -> SamplerCustomAdvanced (euler, ManualSigmas: 6 forwards) -> VAEDecode +
