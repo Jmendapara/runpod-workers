@@ -1,0 +1,113 @@
+name: h3-remake
+# Two opensourcegen tools run on this image (one endpoint, H3_REMAKE_ENDPOINT):
+#   Remake Video  Openjutsu's one-click person swap (graph server/workflows/graphs/remake-video.json): SAM 3.1
+#                 tracks the person, a grey mannequin of them is the motion reference, the photo is <Picture 1>,
+#                 H3 ref2va + DMAD regenerates only their mask, Context Loop chains 6 s clips. Nodes + models
+#                 under "Openjutsu masked swap" below.
+#   Remake Scene  Viggle Remake's edit transformer (graph server/workflows/graphs/remake-scene.json), below.
+#                 The swap transformer is no longer used by the app (people go through Remake Video); it can be
+#                 dropped from model_downloads at the next rebuild (-21 GB).
+#
+# H3 Remake: video-to-video on MiniMax H3 with Viggle Remake (https://huggingface.co/Viggle/Viggle-Remake).
+# The source clip's motion, camera, timing and soundtrack are kept; one to four "painted frames"
+# (frames of the source repainted in an image editor) decide what changes. Two modes, one merged
+# transformer each:
+#   swap  replace people and characters (one or several), their outfits too
+#   edit  everything else: swap, remove or insert objects, change the background, weather, light or style
+#
+# Remake graph (opensourcegen server/workflows/graphs/remake-scene.json):
+#   VHS_LoadVideo (force_rate 24, sized to the canvas) -> RemakeConditioning (+ painted frames, pins,
+#   six-section prompt, the source soundtrack held clean) -> UNETLoader(int8 merged) -> RemakeKeyframeUntil
+#   (0.9) -> BasicGuider -> SamplerCustomAdvanced (euler, ManualSigmas: 6 forwards) -> VAEDecode +
+#   VAEDecodeAudio -> CreateVideo (24 fps) -> SaveVideo (mp4/h264).
+#
+# Nodes: MiniMax H3 support, UNETLoader, ManualSigmas, CreateVideo, SaveVideo are ComfyUI CORE
+# (Viggle tested ComfyUI 0.42.0; the 2026-11-12 base is newer). RemakeConditioning / RemakeKeyframeUntil /
+# RemakeNoise / RemakePrefix come from the Viggle node pack, vendored under nodes/ (it lives only
+# inside the HF model repo, so custom_nodes: cannot clone it) and copied in by patches/install-remake-nodes.py.
+# VHS_LoadVideo resamples any clip to the 24 fps the conditioner expects.
+#
+# Weights: the int8 files are the base transformer with the mode's LoRA merged at fp32 and quantized
+# straight to ComfyUI's int8 convrot layout (same layout as Comfy-Org's minimax_h3_fl2va_pruned_int8_convrot),
+# so no LoRA loader is used. Viggle measured int8 within rounding noise of bf16 + LoRA. CUDA 13 base
+# required for the fast int8 kernels (the shared base is cu130).
+#
+# LICENSE: the weights are a Model Derivative of MiniMax H3 under the MiniMax H3 Community License
+# (display "MiniMax H3" in the product UI; > US$20M/yr needs MiniMax's written authorization).
+# Viggle asks for "Powered by Viggle Remake" credit. The node pack code is Apache-2.0.
+
+custom_nodes:
+  - repo: https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite # VHS_LoadVideo (force_rate 24, resize)
+    ref: 4d907bee61e92c2e65af3bd6383a4e4d356126d1                   # 2026-09-02, same pin as minimax-h3
+  # --- Openjutsu masked swap (https://github.com/D3voz/openjutsu, MIT), on trial against Remake: SAM 3.1
+  # tracks the person, the source is kept outside their grown mask, a grey mannequin of them is the motion
+  # reference and the character photo is <Picture 1> on the H3 reference weights, in a Context Loop.
+  # Pinned; reviewed 2026-11-13 for network / env / exec use (none in the nodes this graph runs).
+  - repo: https://github.com/D3voz/comfyui-h3-oneclick-swap           # Swap Plan, People Mask, Grey Mannequins, shots (MIT)
+    ref: e44a56e92920000e675d14be484aea0d7498d63e                     # 2026-10-29
+  - repo: https://github.com/ethanfel/ComfyUI-MiniMaxH3-Context-Loop  # chained clips, checkpoints, assembly (GPL-3.0, server-side)
+    ref: 43afeffcc570beb5f7382593e79e4b211c7e02f6                     # 0.7.3
+  - repo: https://github.com/Adudeguyman/ComfyUI-Fantastic-MiniMaxH3-PromptBuilder # MiniMaxH3FantasticVideoEditLatent (MIT)
+    ref: 22e719fe89336c628383363182a4da3cb58d4f9b                     # 2026-10-17
+  - repo: https://github.com/kijai/ComfyUI-KJNodes                    # GrowMaskWithBlur
+    ref: b23194124ef9751eb27cd1fb6aa7858080e692ac                     # 2026-11-13
+
+model_downloads:
+  # All public on Hugging Face, no token needed. ~63.5 GB total.
+
+  # Remake swap transformer, int8 convrot, LoRA merged. 20.97 GB. Core UNETLoader.
+  - source: hf
+    repo_id: Viggle/Viggle-Remake
+    filename: int8/viggle_remake_swap_pruned_int8_convrot.safetensors
+    dest: /comfyui/models/diffusion_models/
+
+  # Remake edit transformer, int8 convrot, LoRA merged. 20.97 GB.
+  - source: hf
+    repo_id: Viggle/Viggle-Remake
+    filename: int8/viggle_remake_edit_pruned_int8_convrot.safetensors
+    dest: /comfyui/models/diffusion_models/
+
+  # Text encoder: Qwen3-VL 32B (first 50 layers), nvfp4 AWQ. 15.69 GB. CLIPLoader type=minimax.
+  # Viggle measured it level with bf16 for Remake (COMFYUI.md, "Text encoder").
+  - source: hf
+    repo_id: Comfy-Org/MiniMax-H3
+    filename: text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors
+    dest: /comfyui/models/text_encoders/
+
+  # Video VAE (fp16). 5.21 GB.
+  - source: hf
+    repo_id: Comfy-Org/MiniMax-H3
+    filename: vae/minimax_h3_video_vae_fp16.safetensors
+    dest: /comfyui/models/vae/
+
+  # Audio VAE (fp32). 0.61 GB. Encodes the source soundtrack, decodes the output's.
+  - source: hf
+    repo_id: Comfy-Org/MiniMax-H3
+    filename: vae/minimax_h3_audio_vae_fp32.safetensors
+    dest: /comfyui/models/vae/
+
+  # --- Openjutsu masked swap ---
+  # H3 reference (ref2va) transformer with the DMAD 4-step distillation merged in, int8 convrot. 20.97 GB.
+  # Same layout as Comfy-Org's minimax_h3_ref2va_pruned_int8_convrot; Openjutsu samples DMAD at 6 steps.
+  - source: hf
+    repo_id: Spectrallic/MiniMax-H3-DMAD-int8-convrot
+    filename: minimax_h3_ref2va_pruned_dmad_4step_int8_convrot.safetensors
+    dest: /comfyui/models/diffusion_models/
+
+  # SAM 3.1 (core SAM3_VideoTrack): tracks the person (and hats, faces). 1.75 GB.
+  - source: hf
+    repo_id: Comfy-Org/sam3.1
+    filename: checkpoints/sam3.1_multiplex_fp16.safetensors
+    dest: /comfyui/models/checkpoints/
+
+  # Qwen3-VL 8B int8 convrot (core TextGenerate): describes the photo, the people and each clip's shots. 9.35 GB.
+  - source: hf
+    repo_id: Comfy-Org/Qwen3-VL
+    filename: text_encoders/qwen3vl_8b_int8_convrot.safetensors
+    dest: /comfyui/models/text_encoders/
+
+post_install:
+  - patches/install-remake-nodes.py
+
+output:
+  type: video   # SaveVideo emits under ComfyUI's "videos" history key
