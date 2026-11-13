@@ -30,6 +30,18 @@ name: h3-remake
 custom_nodes:
   - repo: https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite # VHS_LoadVideo (force_rate 24, resize)
     ref: 4d907bee61e92c2e65af3bd6383a4e4d356126d1                   # 2026-09-02, same pin as minimax-h3
+  # --- Openjutsu masked swap (https://github.com/D3voz/openjutsu, MIT), on trial against Remake: SAM 3.1
+  # tracks the person, the source is kept outside their grown mask, a grey mannequin of them is the motion
+  # reference and the character photo is <Picture 1> on the H3 reference weights, in a Context Loop.
+  # Pinned; reviewed 2026-11-13 for network / env / exec use (none in the nodes this graph runs).
+  - repo: https://github.com/D3voz/comfyui-h3-oneclick-swap           # Swap Plan, People Mask, Grey Mannequins, shots (MIT)
+    ref: e44a56e92920000e675d14be484aea0d7498d63e                     # 2026-10-29
+  - repo: https://github.com/ethanfel/ComfyUI-MiniMaxH3-Context-Loop  # chained clips, checkpoints, assembly (GPL-3.0, server-side)
+    ref: 43afeffcc570beb5f7382593e79e4b211c7e02f6                     # 0.7.3
+  - repo: https://github.com/Adudeguyman/ComfyUI-Fantastic-MiniMaxH3-PromptBuilder # MiniMaxH3FantasticVideoEditLatent (MIT)
+    ref: 22e719fe89336c628383363182a4da3cb58d4f9b                     # 2026-10-17
+  - repo: https://github.com/kijai/ComfyUI-KJNodes                    # GrowMaskWithBlur
+    ref: b23194124ef9751eb27cd1fb6aa7858080e692ac                     # 2026-11-13
 
 model_downloads:
   # All public on Hugging Face, no token needed. ~63.5 GB total.
@@ -64,6 +76,26 @@ model_downloads:
     repo_id: Comfy-Org/MiniMax-H3
     filename: vae/minimax_h3_audio_vae_fp32.safetensors
     dest: /comfyui/models/vae/
+
+  # --- Openjutsu masked swap ---
+  # H3 reference (ref2va) transformer with the DMAD 4-step distillation merged in, int8 convrot. 20.97 GB.
+  # Same layout as Comfy-Org's minimax_h3_ref2va_pruned_int8_convrot; Openjutsu samples DMAD at 6 steps.
+  - source: hf
+    repo_id: Spectrallic/MiniMax-H3-DMAD-int8-convrot
+    filename: minimax_h3_ref2va_pruned_dmad_4step_int8_convrot.safetensors
+    dest: /comfyui/models/diffusion_models/
+
+  # SAM 3.1 (core SAM3_VideoTrack): tracks the person (and hats, faces). 1.75 GB.
+  - source: hf
+    repo_id: Comfy-Org/sam3.1
+    filename: checkpoints/sam3.1_multiplex_fp16.safetensors
+    dest: /comfyui/models/checkpoints/
+
+  # Qwen3-VL 8B int8 convrot (core TextGenerate): describes the photo, the people and each clip's shots. 9.35 GB.
+  - source: hf
+    repo_id: Comfy-Org/Qwen3-VL
+    filename: text_encoders/qwen3vl_8b_int8_convrot.safetensors
+    dest: /comfyui/models/text_encoders/
 
 post_install:
   - patches/install-remake-nodes.py
