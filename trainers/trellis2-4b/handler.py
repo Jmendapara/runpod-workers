@@ -44,6 +44,10 @@ TURNTABLE_SIZE = 768
 TURNTABLE_FRAMES = 120
 TURNTABLE_FPS = 30
 TURNTABLE_PITCH = 0.30  # radians above the horizon
+# Where the turn starts: the official demo's default view (render_snapshot: step 3 of 8, offset -16°),
+# a three-quarter front view. Frame 0 is the poster every grid shows, and the app's 3D viewer opens
+# at the same angle (client Model3DViewer START_ORBIT).
+TURNTABLE_YAW0 = 2.0769  # 119°
 TURNTABLE_RADIUS = 2.0
 TURNTABLE_FOV = 40
 # Background: a soft dark-grey vignette that sits well in both site themes.
@@ -155,7 +159,7 @@ def render_turntable(mesh, envmap, out_path: str) -> dict:
     import torch
     from trellis2.utils import render_utils
 
-    yaws = (-torch.linspace(0, 2 * np.pi, TURNTABLE_FRAMES + 1)[:-1] + np.pi / 2).tolist()
+    yaws = (TURNTABLE_YAW0 - torch.linspace(0, 2 * np.pi, TURNTABLE_FRAMES + 1)[:-1]).tolist()
     pitches = [TURNTABLE_PITCH] * TURNTABLE_FRAMES
     extr, intr = render_utils.yaw_pitch_r_fov_to_extrinsics_intrinsics(yaws, pitches, TURNTABLE_RADIUS, TURNTABLE_FOV)
     frames = render_utils.render_frames(mesh, extr, intr, {"resolution": TURNTABLE_SIZE}, verbose=False, envmap=envmap)
