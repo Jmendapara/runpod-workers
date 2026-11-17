@@ -62,9 +62,15 @@ VIEW_SEARCH_SIZE = 192
 # a stuck handler running — the worker then never takes another job.
 JOB_DEADLINE_S = 840
 # The GLB bake runs in its own process (bake.py) so it can be stopped: it usually takes 40–110 s, but on
-# some shapes it runs for tens of minutes. The second try skips the remesh and keeps fewer faces.
+# some shapes (fragmented ones: hair, fur) it runs for tens of minutes — for one picture even the cheaper
+# bake without the remesh stalled. So three tries: the official bake, the same without the remesh, and a
+# vertex-colour GLB (no UV unwrap, no texture bake), which always finishes in seconds.
 BAKE_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bake.py")
-BAKE_TRIES = ((None, None, True, 300), (250_000, 2048, False, 180))  # (faces, texture, remesh, limit s); None = as asked
+BAKE_TRIES = (  # (mode, faces, texture, limit s); None = as asked
+    ("remesh", None, None, 270),
+    ("plain", 250_000, 2048, 120),
+    ("vertex", 250_000, 0, 120),
+)
 # Background: one flat dark grey, #17171a — the app paints the same colour around the model (client
 # index.css --m3d-bg). A gradient bands into visible rings once the clip is H.264-compressed.
 BG = (23 / 255, 23 / 255, 26 / 255)
@@ -247,9 +253,17 @@ class BakeTooSlow(RuntimeError):
     pass
 
 
-def bake_glb(pipeline, mesh, spec: JobSpec, out_path: str, deadline: float) -> dict:
-    """The official bake (o_voxel.postprocess.to_glb, as app.py) in bake.py, under a time limit, with one
-    cheaper retry. Returns {faces, vertices, texture_size, remeshed}."""
+def _last_line(text) -> str:
+    if isinstance(text, bytes):
+        text = text.decode("utf-8", "replace")
+    lines = [line.strip() for line in (text or "").replace("\r", "\n").splitlines() if line.strip()]
+    return lines[-1][:200] if lines else ""
+
+
+def bake_glb(pipeline, mesh, spec: JobSpec, out_path: str, deadline: float, tries_log: list) -> dict:
+    """The official bake (o_voxel.postprocess.to_glb, as app.py) in bake.py, under a time limit, then the
+    cheaper tries. Returns {faces, vertices, texture_size, bake}. `tries_log` gets one entry per try
+    (mode, result, seconds, the last step it printed) so a stall can be told apart from a slow bake."""
     import torch
 
     free_gpu_cache()
@@ -259,27 +273,34 @@ def bake_glb(pipeline, mesh, spec: JobSpec, out_path: str, deadline: float) -> d
         "attrs": mesh.attrs.detach().cpu(), "coords": mesh.coords.detach().cpu(),
         "layout": pipeline.pbr_attr_layout, "voxel_size": mesh.voxel_size,
     }, saved)
-    for faces, texture, remesh, limit_s in BAKE_TRIES:
+    for mode, faces, texture, limit_s in BAKE_TRIES:
         faces = faces or spec.decimation_target
-        texture = texture or spec.texture_size
+        texture = spec.texture_size if texture is None else texture
         limit = min(limit_s, deadline - time.time() - 20)
         if limit < 30:
             break
+        t = time.time()
         try:
-            p = subprocess.run([sys.executable, "-u", BAKE_SCRIPT, saved, out_path, str(faces), str(texture), "1" if remesh else "0"],
+            p = subprocess.run([sys.executable, "-u", BAKE_SCRIPT, saved, out_path, str(faces), str(texture), mode],
                                capture_output=True, text=True, timeout=limit)
-        except subprocess.TimeoutExpired:
-            log(f"bake ({faces} faces, {texture}px, remesh={remesh}) still running after {limit:.0f}s — stopped")
+        except subprocess.TimeoutExpired as exc:
+            last = _last_line(exc.stdout) or _last_line(exc.stderr)
+            tries_log.append({"mode": mode, "result": "timeout", "s": round(time.time() - t, 1), "last": last})
+            log(f"bake {mode} ({faces} faces, {texture}px) still running after {limit:.0f}s — stopped at: {last}")
             continue
         if p.returncode != 0:
             tail = (p.stderr or p.stdout or "").strip().splitlines()[-12:]
-            log("bake failed:\n" + "\n".join(tail))
+            tries_log.append({"mode": mode, "result": "error", "s": round(time.time() - t, 1), "last": tail[-1][:200] if tail else ""})
+            log(f"bake {mode} failed:\n" + "\n".join(tail))
             if any("out of memory" in line.lower() for line in tail):
-                raise torch.cuda.OutOfMemoryError("bake: " + tail[-1])
-            raise RuntimeError("bake: " + (tail[-1] if tail else f"exit {p.returncode}"))
+                continue  # a cheaper try may fit
+            continue
         counts = json.loads(p.stdout.strip().splitlines()[-1])
-        return {**counts, "texture_size": texture, "remeshed": remesh}
-    raise BakeTooSlow("the GLB bake ran out of time")
+        tries_log.append({"mode": mode, "result": "ok", "s": round(time.time() - t, 1)})
+        return {**counts, "texture_size": texture, "bake": mode}
+    err = BakeTooSlow("the GLB bake ran out of time")
+    err.tries = tries_log
+    raise err
 
 
 # --- Job --------------------------------------------------------------------------------------
@@ -333,7 +354,9 @@ def run_job(job: dict) -> dict:
 
         t = time.time()
         glb_path = os.path.join(work, "model.glb")
-        counts = bake_glb(pipeline, mesh, spec, glb_path, deadline)
+        bake_tries: list = []
+        result["bake_tries"] = bake_tries
+        counts = bake_glb(pipeline, mesh, spec, glb_path, deadline, bake_tries)
         stage("bake", t)
 
         t = time.time()
@@ -368,8 +391,9 @@ def handler(job: dict) -> dict:
     except InputError as exc:
         log(f"job {job.get('id')}: refused: {exc}")
         return {"error": str(exc)}
-    except BakeTooSlow:
-        return {"error": TOO_SLOW, "refresh_worker": True}
+    except BakeTooSlow as exc:
+        log(f"job {job.get('id')}: every bake try ran out of time: {getattr(exc, 'tries', [])}")
+        return {"error": TOO_SLOW, "bake_tries": getattr(exc, "tries", []), "refresh_worker": True}
     except Exception as exc:
         import torch
 
