@@ -129,7 +129,7 @@ models/<name>/
 schema/model.schema.json    JSON Schema for model.yaml (single source of truth)
 tools/validate_yaml.py      Lint runner (also the CI check)
 tests/                      Smoke tests + trainer unit tests
-trainers/<name>/            Non-ComfyUI workers with their own Dockerfile (lora-trainer)
+trainers/<name>/            Non-ComfyUI workers with their own Dockerfile (lora-trainer, trellis2-4b)
 build.sh                    The one entrypoint, curl|bash-friendly
 ```
 
