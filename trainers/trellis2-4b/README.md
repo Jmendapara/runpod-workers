@@ -66,7 +66,13 @@ GLB bake runs in `bake.py` (its own process) under a limit, because on fragmente
 | `plain` | `to_glb` without the remesh, 250k faces, 2K texture | 120 s |
 | `vertex` | simplified mesh with its colour per vertex — no UV unwrap, no texture | 120 s |
 
-Each try's `{mode, result, s, last}` (`last` = the last step the bake printed) is in
-`models[0].bake_tries`, and in the error response when every try runs out of time. The turntable
+Each try's `{mode, result, s, last}` (`last` = the last step the bake printed) is in the output's
+`bake_tries`, also in the error response when every try runs out of time.
+
+## Transparent pictures
+
+TRELLIS.2 uses any alpha channel as the cut-out as it is. `picture.py` first drops alpha under 25 %
+(the invisible residue background-removal tools leave, which TRELLIS turns into a flat panel around the
+subject), and ignores an alpha that cuts nothing out (under 1 % transparent), so background removal runs. The turntable
 (768², 240 frames, one turn in 8 s, flat `#17171a`) starts from the view that best matches the input
 (`views.py`); `models[0].view` is that view as a model-viewer camera-orbit.

@@ -36,6 +36,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import runpod  # noqa: E402
 
 from worker_config import InputError, JobSpec, output_key, parse_input  # noqa: E402
+import picture as picture_prep  # noqa: E402
 import views  # noqa: E402
 
 MODEL_DIR = "/models/TRELLIS.2-4B"
@@ -162,7 +163,17 @@ def open_picture(path: str):
         raise InputError("the input is not a readable picture") from exc
     if img.width < 64 or img.height < 64:
         raise InputError("the picture is too small (at least 64 x 64)")
-    return img.convert("RGBA") if img.mode in ("RGBA", "LA", "PA") or "transparency" in img.info else img.convert("RGB")
+    if not (img.mode in ("RGBA", "LA", "PA") or "transparency" in img.info):
+        return img.convert("RGB")
+    # Transparency: drop an invisible residue of the old background, or ignore an alpha that cuts nothing
+    # out (picture.py) — TRELLIS.2 uses any alpha as the cut-out as it is.
+    import numpy as np
+
+    cleaned = picture_prep.clean_alpha(np.asarray(img.convert("RGBA")))
+    if cleaned is None:
+        log("alpha cuts nothing out — removing the background instead")
+        return img.convert("RGB")
+    return Image.fromarray(cleaned, "RGBA")
 
 
 def cut_out(pipeline, img):

@@ -13,6 +13,7 @@ from worker_config import InputError, MAX_FACES, MIN_FACES, output_key, parse_in
 
 try:
     import numpy as np
+    import picture
     import views
 except ImportError:  # numpy is optional on a laptop; the view tests skip without it
     np = None
@@ -119,6 +120,34 @@ class Views(unittest.TestCase):
         theta, phi = views.viewer_orbit(math.radians(119), 0.30)
         self.assertAlmostEqual(theta, 61.0, places=3)
         self.assertAlmostEqual(phi, 90 - math.degrees(0.30), places=3)
+
+
+@unittest.skipIf(np is None, "numpy not installed")
+class Picture(unittest.TestCase):
+    def rgba(self, background_alpha, subject_alpha=255):
+        img = np.zeros((100, 100, 4), np.uint8)
+        img[..., :3] = 255
+        img[..., 3] = background_alpha
+        img[30:70, 40:60, 3] = subject_alpha
+        return img
+
+    def test_an_invisible_residue_of_the_old_background_is_dropped(self):
+        out = picture.clean_alpha(self.rgba(background_alpha=12))
+        self.assertIsNotNone(out)
+        self.assertEqual(int(out[0, 0, 3]), 0)
+        self.assertEqual(int(out[50, 50, 3]), 255)
+
+    def test_soft_edges_of_the_subject_are_kept(self):
+        img = self.rgba(background_alpha=0)
+        img[30, 40:60, 3] = 128
+        self.assertEqual(int(picture.clean_alpha(img)[30, 45, 3]), 128)
+
+    def test_an_alpha_that_cuts_nothing_out_is_ignored(self):
+        self.assertIsNone(picture.clean_alpha(self.rgba(background_alpha=255)))
+        # a 1 px transparent border around a 1024 px picture is not a cut-out either
+        img = np.full((1024, 1024, 4), 255, np.uint8)
+        img[0, :, 3] = img[-1, :, 3] = img[:, 0, 3] = img[:, -1, 3] = 0
+        self.assertIsNone(picture.clean_alpha(img))
 
 
 if __name__ == "__main__":
