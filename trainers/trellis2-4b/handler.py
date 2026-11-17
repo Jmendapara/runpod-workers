@@ -48,7 +48,7 @@ CACHE_CONTROL = "public, max-age=31536000"
 # best matches the input picture (views.py) — frame 0 is the poster every grid shows — and the app's
 # 3D viewer opens at the same angle (the model's `view`).
 TURNTABLE_SIZE = 768
-TURNTABLE_FRAMES = 120
+TURNTABLE_FRAMES = 240  # one turn in 8 s — slow enough to read the object in a grid tile
 TURNTABLE_FPS = 30
 TURNTABLE_PITCH = 0.30  # radians above the horizon
 TURNTABLE_FOV = 40

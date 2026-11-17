@@ -47,7 +47,7 @@ Background removal uses `ZhengPeng7/BiRefNet` (MIT, the code's default) instead 
 { "models": [{ "type": "s3_url", "data": "<presigned>", "r2_key": "…/ab12cd34.glb", "format": "glb",
                "bytes": 15000000, "faces": 500000, "vertices": 251000, "texture_size": 2048 }],
   "videos": [{ "type": "s3_url", "data": "<presigned>", "r2_key": "…/ab12cd34.mp4",
-               "width": 768, "height": 768, "fps": 30, "frames": 120 }],
+               "width": 768, "height": 768, "fps": 30, "frames": 240 }],
   "seed": 42, "quality": "standard", "timings": { "prepare": 1.2, "generate": 17.0, … }, "gpu": "NVIDIA H100 80GB HBM3" }
 ```
 
