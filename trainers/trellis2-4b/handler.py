@@ -65,9 +65,9 @@ JOB_DEADLINE_S = 840
 # some shapes it runs for tens of minutes. The second try skips the remesh and keeps fewer faces.
 BAKE_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bake.py")
 BAKE_TRIES = ((None, None, True, 300), (250_000, 2048, False, 180))  # (faces, texture, remesh, limit s); None = as asked
-# Background: a soft dark-grey vignette that sits well in both site themes.
-BG_CENTER = (0.165, 0.165, 0.180)
-BG_EDGE = (0.075, 0.075, 0.085)
+# Background: one flat dark grey, #17171a — the app paints the same colour around the model (client
+# index.css --m3d-bg). A gradient bands into visible rings once the clip is H.264-compressed.
+BG = (23 / 255, 23 / 255, 26 / 255)
 
 _pipeline = None
 _envmap = None
@@ -215,12 +215,10 @@ def render_turntable(mesh, envmap, out_path: str, yaw0: float) -> dict:
     extr, intr, opts = orbit_cameras(mesh, yaws, TURNTABLE_PITCH)
     frames = render_utils.render_frames(mesh, extr, intr, {"resolution": TURNTABLE_SIZE, **opts}, verbose=False, envmap=envmap)
 
-    # The renderer leaves the background black (shading is accumulated over coverage), so the vignette goes
-    # in by the anti-aliased coverage mask of the nearest surface.
+    # The renderer leaves the background black (shading is accumulated over coverage), so the background
+    # goes in by the anti-aliased coverage mask of the nearest surface.
     n = TURNTABLE_SIZE
-    yy, xx = np.mgrid[0:n, 0:n].astype(np.float32)
-    d = np.clip(np.sqrt((xx - n / 2) ** 2 + (yy - n / 2) ** 2) / (n * 0.72), 0, 1)[..., None]
-    bg = np.array(BG_CENTER, np.float32) * (1 - d) + np.array(BG_EDGE, np.float32) * d
+    bg = np.array(BG, np.float32)
 
     writer = imageio.get_writer(out_path, fps=TURNTABLE_FPS, codec="libx264", quality=None,
                                 ffmpeg_params=["-crf", "18", "-preset", "slow", "-pix_fmt", "yuv420p", "-movflags", "+faststart"],
