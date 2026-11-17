@@ -19,13 +19,17 @@ BUCKET_SECRET_ACCESS_KEY, R2_BUCKET_NAME (+ optional R2_INPUT_BUCKET_NAME).
 """
 from __future__ import annotations
 
+import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import time
 import traceback
 import uuid
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeout
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -52,6 +56,15 @@ TURNTABLE_FOV = 40
 # so it never leaves the frame as it turns and small objects are not lost in the middle.
 FRAME_MARGIN = 1.06
 VIEW_SEARCH_SIZE = 192
+
+# Time budget. The endpoint stops a job at 900 s (OpenSourceGen sets the same per run); the handler gives
+# up a little earlier and asks RunPod for a fresh worker, because a RunPod timeout fails the job but leaves
+# a stuck handler running — the worker then never takes another job.
+JOB_DEADLINE_S = 840
+# The GLB bake runs in its own process (bake.py) so it can be stopped: it usually takes 40–110 s, but on
+# some shapes it runs for tens of minutes. The second try skips the remesh and keeps fewer faces.
+BAKE_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bake.py")
+BAKE_TRIES = ((None, None, True, 300), (250_000, 2048, False, 180))  # (faces, texture, remesh, limit s); None = as asked
 # Background: a soft dark-grey vignette that sits well in both site themes.
 BG_CENTER = (0.165, 0.165, 0.180)
 BG_EDGE = (0.075, 0.075, 0.085)
@@ -232,27 +245,43 @@ def free_gpu_cache() -> None:
     torch.cuda.empty_cache()
 
 
-def bake_glb(pipeline, mesh, spec: JobSpec, out_path: str) -> dict:
-    import o_voxel
+class BakeTooSlow(RuntimeError):
+    pass
+
+
+def bake_glb(pipeline, mesh, spec: JobSpec, out_path: str, deadline: float) -> dict:
+    """The official bake (o_voxel.postprocess.to_glb, as app.py) in bake.py, under a time limit, with one
+    cheaper retry. Returns {faces, vertices, texture_size, remeshed}."""
+    import torch
 
     free_gpu_cache()
-    glb = o_voxel.postprocess.to_glb(
-        vertices=mesh.vertices,
-        faces=mesh.faces,
-        attr_volume=mesh.attrs,
-        coords=mesh.coords,
-        attr_layout=pipeline.pbr_attr_layout,
-        voxel_size=mesh.voxel_size,
-        aabb=[[-0.5, -0.5, -0.5], [0.5, 0.5, 0.5]],
-        decimation_target=spec.decimation_target,
-        texture_size=spec.texture_size,
-        remesh=True,
-        remesh_band=1,
-        remesh_project=0,
-        verbose=True,
-    )
-    glb.export(out_path, extension_webp=True)
-    return {"faces": int(len(glb.faces)), "vertices": int(len(glb.vertices))}
+    saved = out_path + ".mesh.pt"
+    torch.save({
+        "vertices": mesh.vertices.detach().cpu(), "faces": mesh.faces.detach().cpu(),
+        "attrs": mesh.attrs.detach().cpu(), "coords": mesh.coords.detach().cpu(),
+        "layout": pipeline.pbr_attr_layout, "voxel_size": mesh.voxel_size,
+    }, saved)
+    for faces, texture, remesh, limit_s in BAKE_TRIES:
+        faces = faces or spec.decimation_target
+        texture = texture or spec.texture_size
+        limit = min(limit_s, deadline - time.time() - 20)
+        if limit < 30:
+            break
+        try:
+            p = subprocess.run([sys.executable, "-u", BAKE_SCRIPT, saved, out_path, str(faces), str(texture), "1" if remesh else "0"],
+                               capture_output=True, text=True, timeout=limit)
+        except subprocess.TimeoutExpired:
+            log(f"bake ({faces} faces, {texture}px, remesh={remesh}) still running after {limit:.0f}s — stopped")
+            continue
+        if p.returncode != 0:
+            tail = (p.stderr or p.stdout or "").strip().splitlines()[-12:]
+            log("bake failed:\n" + "\n".join(tail))
+            if any("out of memory" in line.lower() for line in tail):
+                raise torch.cuda.OutOfMemoryError("bake: " + tail[-1])
+            raise RuntimeError("bake: " + (tail[-1] if tail else f"exit {p.returncode}"))
+        counts = json.loads(p.stdout.strip().splitlines()[-1])
+        return {**counts, "texture_size": texture, "remeshed": remesh}
+    raise BakeTooSlow("the GLB bake ran out of time")
 
 
 # --- Job --------------------------------------------------------------------------------------
@@ -260,6 +289,8 @@ def bake_glb(pipeline, mesh, spec: JobSpec, out_path: str) -> dict:
 def run_job(job: dict) -> dict:
     import torch
 
+    started = time.time()
+    deadline = started + JOB_DEADLINE_S
     spec = parse_input(job.get("input"))
     job_id = str(job.get("id") or uuid.uuid4())
     timings: dict[str, float] = {}
@@ -304,7 +335,7 @@ def run_job(job: dict) -> dict:
 
         t = time.time()
         glb_path = os.path.join(work, "model.glb")
-        counts = bake_glb(pipeline, mesh, spec, glb_path)
+        counts = bake_glb(pipeline, mesh, spec, glb_path, deadline)
         stage("bake", t)
 
         t = time.time()
@@ -312,7 +343,7 @@ def run_job(job: dict) -> dict:
         url = upload(glb_path, key, "model/gltf-binary")
         result["models"] = [{
             "type": "s3_url", "data": url, "r2_key": key, "filename": f"{tag}.glb", "format": "glb",
-            "bytes": os.path.getsize(glb_path), "texture_size": spec.texture_size, "view": view, **counts,
+            "bytes": os.path.getsize(glb_path), "view": view, **counts,
         }]
         stage("upload", t)
         log(f"job {job_id}: {spec.quality} seed={spec.seed} faces={counts['faces']} glb={result['models'][0]['bytes'] / 1e6:.1f} MB timings={timings}")
@@ -322,20 +353,34 @@ def run_job(job: dict) -> dict:
         torch.cuda.empty_cache()
 
 
+TOO_SLOW = "building this 3D model took too long — try again, or use Standard quality"
+
+
 def handler(job: dict) -> dict:
+    # The job runs on a thread so a hang anywhere (a CUDA call cannot be interrupted) still answers before
+    # RunPod's timeout. refresh_worker: RunPod replaces this worker afterwards, which ends the stuck thread;
+    # it is also asked for after any unexpected error, since a CUDA error can leave the context unusable.
+    pool = ThreadPoolExecutor(max_workers=1)
+    future = pool.submit(run_job, job)
     try:
-        return run_job(job)
+        return future.result(timeout=JOB_DEADLINE_S + 30)
+    except FutureTimeout:
+        log(f"job {job.get('id')}: no result after {JOB_DEADLINE_S + 30}s — answering and recycling the worker")
+        return {"error": TOO_SLOW, "refresh_worker": True}
     except InputError as exc:
         log(f"job {job.get('id')}: refused: {exc}")
         return {"error": str(exc)}
+    except BakeTooSlow:
+        return {"error": TOO_SLOW, "refresh_worker": True}
     except Exception as exc:
         import torch
 
         traceback.print_exc()
         if isinstance(exc, torch.cuda.OutOfMemoryError):
-            torch.cuda.empty_cache()
-            return {"error": "the GPU ran out of memory on this picture — try Standard quality"}
-        return {"error": f"3D generation failed: {type(exc).__name__}: {exc}"[:500]}
+            return {"error": "the GPU ran out of memory on this picture — try Standard quality", "refresh_worker": True}
+        return {"error": f"3D generation failed: {type(exc).__name__}: {exc}"[:500], "refresh_worker": True}
+    finally:
+        pool.shutdown(wait=False)
 
 
 if __name__ == "__main__":

@@ -25,7 +25,7 @@ Background removal uses `ZhengPeng7/BiRefNet` (MIT, the code's default) instead 
 
 - GPU: 48 GB+ (L40S / A6000 Ada / A100 / H100). It runs on 24 GB in the pipeline's low-VRAM mode,
   but High quality can run out of memory there. No Blackwell pools (the flash-attn wheel has no sm_120).
-- Container disk 60 GB, FlashBoot on, execution timeout 600 s.
+- Container disk 80 GB, FlashBoot on, execution timeout 900 s (the handler answers by 870 s and recycles a stuck worker).
 - Env: the four R2 vars only — `BUCKET_ENDPOINT_URL`, `BUCKET_ACCESS_KEY_ID`,
   `BUCKET_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME` (+ optional `R2_INPUT_BUCKET_NAME`). R2 is required.
 
