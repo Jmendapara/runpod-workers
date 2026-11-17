@@ -83,7 +83,9 @@ RUN fetch-commit TRELLIS.2 https://github.com/microsoft/TRELLIS.2.git ${TRELLIS2
     mv /tmp/ext/TRELLIS.2 /app && cd /app && \
     pip install --no-cache-dir ./o-voxel --no-build-isolation && \
     rm -rf .git o-voxel/third_party data_toolkit configs train.py && \
-    python -c "import o_voxel, cumesh, flex_gemm, nvdiffrast.torch, nvdiffrec_render, flash_attn; print('extensions import OK')"
+    # Installed + compiled, checked without importing: FlexGEMM reads the GPU name at import time and
+    # the build box has no GPU (the handler's cold start imports everything on the real worker).
+    python -c "import importlib.util as u, sys; mods=['o_voxel','cumesh','flex_gemm','nvdiffrast','nvdiffrec_render','flash_attn']; missing=[m for m in mods if u.find_spec(m) is None]; sys.exit('missing: %s' % missing) if missing else print('extensions installed OK')"
 
 # Weights, one layer per repo (each blob stays inside Docker Hub's upload window).
 # Only the checkpoints the image-to-3D pipeline loads; the VAE encoders (texturing / training) are skipped.
