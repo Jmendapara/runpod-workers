@@ -1,0 +1,27 @@
+# TRELLIS.2 inference (setup.sh --basic, minus the demo/training-only packages)
+imageio==2.37.0
+imageio-ffmpeg==0.6.0
+tqdm==4.67.1
+easydict==1.13
+opencv-python-headless==4.11.0.86
+ninja==1.11.1.4
+trimesh==4.6.8
+transformers==4.57.1
+kornia==0.8.1
+timm==1.0.15
+plyfile==1.1
+zstandard==0.23.0
+safetensors==0.5.3
+# BiRefNet remote code (ZhengPeng7/BiRefNet requirements.txt)
+einops==0.8.1
+scipy==1.15.3
+scikit-image==0.25.2
+accelerate==1.7.0
+prettytable==3.16.0
+# worker
+numpy==2.2.6
+pillow==11.2.1
+huggingface_hub[hf_transfer]==0.35.3
+runpod==1.7.9
+boto3==1.38.27
+requests==2.32.3
