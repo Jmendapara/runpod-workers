@@ -32,6 +32,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import runpod  # noqa: E402
 
 from worker_config import InputError, JobSpec, output_key, parse_input  # noqa: E402
+import views  # noqa: E402
 
 MODEL_DIR = "/models/TRELLIS.2-4B"
 HDRI_PATH = "/app/assets/hdri/studio.exr"  # CC0 (Poly Haven, see assets/hdri/license.txt)
@@ -39,24 +40,21 @@ PRESIGN_TTL_SECONDS = 7 * 24 * 3600
 CACHE_CONTROL = "public, max-age=31536000"
 
 # Turntable: one full turn at a fixed, slightly raised camera (the official render_video bobs the
-# camera up and down, which reads as a wobble in a looping grid tile).
+# camera up and down, which reads as a wobble in a looping grid tile). It starts from the view that
+# best matches the input picture (views.py) — frame 0 is the poster every grid shows — and the app's
+# 3D viewer opens at the same angle (the model's `view`).
 TURNTABLE_SIZE = 768
 TURNTABLE_FRAMES = 120
 TURNTABLE_FPS = 30
 TURNTABLE_PITCH = 0.30  # radians above the horizon
-# Where the turn starts: the official demo's default view (render_snapshot: step 3 of 8, offset -16°),
-# a three-quarter front view. Frame 0 is the poster every grid shows, and the app's 3D viewer opens
-# at the same angle (client Model3DViewer START_ORBIT).
-TURNTABLE_YAW0 = 2.0769  # 119°
-TURNTABLE_RADIUS = 2.0
 TURNTABLE_FOV = 40
+# The camera is fitted to each object: its bounding sphere fills the frame with this much room to spare,
+# so it never leaves the frame as it turns and small objects are not lost in the middle.
+FRAME_MARGIN = 1.06
+VIEW_SEARCH_SIZE = 192
 # Background: a soft dark-grey vignette that sits well in both site themes.
 BG_CENTER = (0.165, 0.165, 0.180)
 BG_EDGE = (0.075, 0.075, 0.085)
-
-# Keep every model on the GPU when it fits; below this the pipeline's low-VRAM mode moves each
-# stage's model on and off the GPU (TRELLIS.2 needs 24 GB either way).
-RESIDENT_VRAM_GB = 40
 
 _pipeline = None
 _envmap = None
@@ -122,7 +120,10 @@ def load():
     t0 = time.time()
     pipeline = Trellis2ImageTo3DPipeline.from_pretrained(MODEL_DIR)
     vram_gb = torch.cuda.get_device_properties(0).total_memory / 1024**3
-    pipeline.low_vram = vram_gb < RESIDENT_VRAM_GB
+    # Upstream's default: each stage's model goes to the GPU only for that stage (about a second of
+    # PCIe per job). Keeping all of them resident left too little for the GLB bake of a High detail
+    # model on a 48 GB card (CuMesh out of memory).
+    pipeline.low_vram = True
     pipeline.cuda()
     hdri = cv2.cvtColor(cv2.imread(HDRI_PATH, cv2.IMREAD_UNCHANGED), cv2.COLOR_BGR2RGB)
     _envmap = EnvMap(torch.tensor(hdri, dtype=torch.float32, device="cuda"))
@@ -153,16 +154,53 @@ def cut_out(pipeline, img):
         raise InputError("no object was found in the picture — use a picture of one clear subject") from exc
 
 
-def render_turntable(mesh, envmap, out_path: str) -> dict:
+def orbit_cameras(mesh, yaws, pitch: float):
+    """Cameras around the object's own centre, at the distance where its bounding sphere fits the frame."""
+    import math
+    import torch
+    import utils3d
+
+    v = mesh.vertices.float()
+    center = (v.min(0).values + v.max(0).values) / 2
+    radius = float((v - center).norm(dim=1).max())
+    fov = math.radians(TURNTABLE_FOV)
+    dist = radius / math.sin(fov / 2) * FRAME_MARGIN
+    up = torch.tensor([0.0, 0.0, 1.0], device=v.device)
+    fov_t = torch.tensor(fov, device=v.device)
+    intr = utils3d.torch.intrinsics_from_fov_xy(fov_t, fov_t)
+    extr = []
+    for yaw in yaws:
+        d = torch.tensor([math.sin(yaw) * math.cos(pitch), math.cos(yaw) * math.cos(pitch), math.sin(pitch)], device=v.device)
+        extr.append(utils3d.torch.extrinsics_look_at(center + d * dist, center, up))
+    # Near / far around the object (the renderer's defaults, 1..100, would clip a close camera).
+    options = {"near": max(0.01, dist - radius * 1.5), "far": dist + radius * 1.5}
+    return extr, [intr] * len(yaws), options
+
+
+def choose_view(mesh, envmap, picture) -> tuple[float, float]:
+    """The yaw whose small render best matches the cut-out input (views.py). Returns (yaw, score)."""
+    import numpy as np
+    from trellis2.utils import render_utils
+
+    target = views.target_from_cutout(np.asarray(picture.convert("RGB")).astype(np.float32) / 255.0)
+    yaws = views.candidate_yaws()
+    if target is None:
+        return yaws[0], -1.0
+    extr, intr, opts = orbit_cameras(mesh, yaws, TURNTABLE_PITCH)
+    frames = render_utils.render_frames(mesh, extr, intr, {"resolution": VIEW_SEARCH_SIZE, "ssaa": 1, "peel_layers": 2, **opts}, verbose=False, envmap=envmap)
+    rendered = [views.normalize_view(shaded.astype(np.float32) / 255.0, mask[..., 0] > 127) for shaded, mask in zip(frames["shaded"], frames["mask"])]
+    return views.best_yaw(target, rendered, yaws)
+
+
+def render_turntable(mesh, envmap, out_path: str, yaw0: float) -> dict:
     import imageio
     import numpy as np
     import torch
     from trellis2.utils import render_utils
 
-    yaws = (TURNTABLE_YAW0 - torch.linspace(0, 2 * np.pi, TURNTABLE_FRAMES + 1)[:-1]).tolist()
-    pitches = [TURNTABLE_PITCH] * TURNTABLE_FRAMES
-    extr, intr = render_utils.yaw_pitch_r_fov_to_extrinsics_intrinsics(yaws, pitches, TURNTABLE_RADIUS, TURNTABLE_FOV)
-    frames = render_utils.render_frames(mesh, extr, intr, {"resolution": TURNTABLE_SIZE}, verbose=False, envmap=envmap)
+    yaws = (yaw0 - torch.linspace(0, 2 * np.pi, TURNTABLE_FRAMES + 1)[:-1]).tolist()
+    extr, intr, opts = orbit_cameras(mesh, yaws, TURNTABLE_PITCH)
+    frames = render_utils.render_frames(mesh, extr, intr, {"resolution": TURNTABLE_SIZE, **opts}, verbose=False, envmap=envmap)
 
     # The renderer leaves the background black (shading is accumulated over coverage), so the vignette goes
     # in by the anti-aliased coverage mask of the nearest surface.
@@ -184,9 +222,20 @@ def render_turntable(mesh, envmap, out_path: str) -> dict:
     return {"width": n, "height": n, "fps": TURNTABLE_FPS, "frames": TURNTABLE_FRAMES}
 
 
+def free_gpu_cache() -> None:
+    """Hand PyTorch's cached blocks back to the driver: CuMesh / nvdiffrast allocate with cudaMalloc
+    directly and cannot use PyTorch's reserve."""
+    import gc
+    import torch
+
+    gc.collect()
+    torch.cuda.empty_cache()
+
+
 def bake_glb(pipeline, mesh, spec: JobSpec, out_path: str) -> dict:
     import o_voxel
 
+    free_gpu_cache()
     glb = o_voxel.postprocess.to_glb(
         vertices=mesh.vertices,
         faces=mesh.faces,
@@ -231,15 +280,23 @@ def run_job(job: dict) -> dict:
         t = time.time()
         mesh = pipeline.run(picture, seed=spec.seed, preprocess_image=False, pipeline_type=spec.pipeline_type)[0]
         mesh.simplify(16777216)  # nvdiffrast's limit (as upstream)
+        free_gpu_cache()
         stage("generate", t)
 
         tag = uuid.uuid4().hex[:8]
         result: dict = {"seed": spec.seed, "quality": spec.quality, "timings": timings, "gpu": torch.cuda.get_device_name(0)}
 
+        t = time.time()
+        yaw0, match = choose_view(mesh, envmap, picture)
+        theta, phi = views.viewer_orbit(yaw0, TURNTABLE_PITCH)
+        # How the app's 3D viewer opens it (model-viewer camera-orbit, degrees) — the turntable's first frame.
+        view = {"theta": round(theta, 1), "phi": round(phi, 1), "match": round(match, 3)}
+        stage("view", t)
+
         if spec.turntable:
             t = time.time()
             mp4 = os.path.join(work, "turntable.mp4")
-            meta = render_turntable(mesh, envmap, mp4)
+            meta = render_turntable(mesh, envmap, mp4, yaw0)
             key = output_key(f"{tag}.mp4", job_id, spec.uid)
             url = upload(mp4, key, "video/mp4")
             result["videos"] = [{"type": "s3_url", "data": url, "r2_key": key, "filename": f"{tag}.mp4", **meta}]
@@ -255,7 +312,7 @@ def run_job(job: dict) -> dict:
         url = upload(glb_path, key, "model/gltf-binary")
         result["models"] = [{
             "type": "s3_url", "data": url, "r2_key": key, "filename": f"{tag}.glb", "format": "glb",
-            "bytes": os.path.getsize(glb_path), "texture_size": spec.texture_size, **counts,
+            "bytes": os.path.getsize(glb_path), "texture_size": spec.texture_size, "view": view, **counts,
         }]
         stage("upload", t)
         log(f"job {job_id}: {spec.quality} seed={spec.seed} faces={counts['faces']} glb={result['models'][0]['bytes'] / 1e6:.1f} MB timings={timings}")
