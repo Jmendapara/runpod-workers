@@ -52,3 +52,21 @@ Background removal uses `ZhengPeng7/BiRefNet` (MIT, the code's default) instead 
 ```
 
 A refused input or a failure returns `{ "error": "…" }`. Unit tests: `python3 tests/test_trellis2.py`.
+
+## Time budget and fallbacks
+
+The endpoint stops a job at 900 s; the handler answers by 870 s and sets `refresh_worker` (a RunPod
+timeout fails the job but leaves a stuck handler running, and the worker never takes another job). The
+GLB bake runs in `bake.py` (its own process) under a limit, because on fragmented shapes (hair, fur)
+`to_glb` can run for 20+ minutes:
+
+| Try | What | Limit |
+|---|---|---|
+| `remesh` | the official bake (`to_glb`, remesh, as asked: faces / texture) | 270 s |
+| `plain` | `to_glb` without the remesh, 250k faces, 2K texture | 120 s |
+| `vertex` | simplified mesh with its colour per vertex — no UV unwrap, no texture | 120 s |
+
+Each try's `{mode, result, s, last}` (`last` = the last step the bake printed) is in
+`models[0].bake_tries`, and in the error response when every try runs out of time. The turntable
+(768², 240 frames, one turn in 8 s, flat `#17171a`) starts from the view that best matches the input
+(`views.py`); `models[0].view` is that view as a model-viewer camera-orbit.
