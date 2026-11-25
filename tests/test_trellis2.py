@@ -73,8 +73,8 @@ class ParseInput(unittest.TestCase):
         spec = parse_input({"image_r2_keys": keys, "image_r2_key": "ignored.png"})
         self.assertEqual(spec.image_r2_keys, tuple(keys))
         self.assertEqual(spec.image_r2_key, keys[0])
-        self.assertEqual(spec.multi_image_mode, "multidiffusion")
-        self.assertEqual(parse_input({"image_r2_keys": keys, "multi_image_mode": "Stochastic"}).multi_image_mode, "stochastic")
+        self.assertEqual(spec.together_steps, 4)
+        self.assertEqual(parse_input({"image_r2_keys": keys, "together_steps": 0}).together_steps, 0)
 
     def test_refuses_bad_picture_lists(self):
         bad = [
@@ -85,7 +85,9 @@ class ParseInput(unittest.TestCase):
             {"image_r2_keys": [KEY, 5]},
             {"image_r2_keys": [KEY, KEY]},
             {"image_r2_keys": [f"k{i}.png" for i in range(MAX_IMAGES + 1)]},
-            {"image_r2_keys": [KEY, "b.png"], "multi_image_mode": "average"},
+            {"image_r2_keys": [KEY, "b.png"], "together_steps": -1},
+            {"image_r2_keys": [KEY, "b.png"], "together_steps": 51},
+            {"image_r2_keys": [KEY, "b.png"], "together_steps": "some"},
         ]
         for raw in bad:
             with self.subTest(raw=raw), self.assertRaises(InputError):
@@ -107,36 +109,58 @@ class Cond:
 
 
 class MultiImage(unittest.TestCase):
-    def sampler(self, count, mode):
+    T = (1.0, 0.9, 0.7, 0.4, 0.2)  # a five-step sampler: every stage starts at t = 1
+
+    def sampler(self, count, together_steps, stage_steps=(5,)):
         calls = []
 
         def original(self, model, x_t, t, cond=None, **kwargs):
             calls.append((cond.items, kwargs))
             return float(sum(cond.items))  # the "prediction" for a picture is its label
 
-        return multi_image.make_inference(original, count, mode), calls
+        return multi_image.make_inference(original, count, together_steps, list(stage_steps)), calls
 
-    def test_multidiffusion_averages_one_prediction_per_picture(self):
-        infer, calls = self.sampler(3, "multidiffusion")
-        pred = infer(None, "model", "x", 0.8, Cond([3.0, 6.0, 9.0]), concat_cond="shape")
+    def test_together_is_the_mean_of_one_prediction_per_picture(self):
+        infer, calls = self.sampler(3, together_steps=5)
+        pred = infer(None, "model", "x", 1.0, Cond([3.0, 6.0, 9.0]), concat_cond="shape")
         self.assertAlmostEqual(pred, 6.0)
         self.assertEqual([c[0] for c in calls], [[3.0], [6.0], [9.0]])
         self.assertTrue(all(c[1] == {"concat_cond": "shape"} for c in calls))
 
     def test_the_negative_conditioning_passes_through_once(self):
-        infer, calls = self.sampler(3, "multidiffusion")
+        infer, calls = self.sampler(3, together_steps=5)
         self.assertEqual(infer(None, "model", "x", 0.8, Cond([0.0])), 0.0)
         self.assertEqual(len(calls), 1)
 
-    def test_stochastic_takes_the_pictures_in_turn_and_restarts_each_stage(self):
-        infer, calls = self.sampler(2, "stochastic")
+    def test_in_turn_takes_one_picture_per_step_and_restarts_each_stage(self):
+        infer, _ = self.sampler(2, together_steps=0)
         cond, neg = Cond([1.0, 2.0]), Cond([0.0])
         seen = []
         for _stage in range(2):
-            for t in (1.0, 0.9, 0.7, 0.4, 0.2):
+            for t in self.T:
                 seen.append(infer(None, "model", "x", t, cond))
                 infer(None, "model", "x", t, neg)  # guidance's negative call must not advance the turn
         self.assertEqual(seen, [1.0, 2.0, 1.0, 2.0, 1.0] * 2)
+
+    def test_turns_first_then_the_last_steps_together(self):
+        infer, calls = self.sampler(2, together_steps=2)
+        cond = Cond([1.0, 3.0])
+        seen = [infer(None, "model", "x", t, cond) for t in self.T]
+        self.assertEqual(seen, [1.0, 3.0, 1.0, 2.0, 2.0])
+        self.assertEqual(len(calls), 3 + 2 * 2)
+
+    def test_each_stage_counts_its_own_steps(self):
+        # A three-step stage, then a five-step one: the last two steps of each are taken together.
+        infer, _ = self.sampler(2, together_steps=2, stage_steps=(3, 5))
+        cond = Cond([1.0, 3.0])
+        first = [infer(None, "model", "x", t, cond) for t in (1.0, 0.6, 0.2)]
+        second = [infer(None, "model", "x", t, cond) for t in self.T]
+        self.assertEqual(first, [1.0, 2.0, 2.0])
+        self.assertEqual(second, [1.0, 3.0, 1.0, 2.0, 2.0])
+
+    def test_more_together_steps_than_the_sampler_has_means_every_step(self):
+        infer, _ = self.sampler(2, together_steps=50)
+        self.assertEqual([infer(None, "model", "x", t, Cond([1.0, 3.0])) for t in self.T], [2.0] * 5)
 
     def test_the_sampler_class_is_restored_even_after_an_error(self):
         class Sampler:
@@ -145,7 +169,7 @@ class MultiImage(unittest.TestCase):
 
         before = Sampler._inference_model
         with self.assertRaises(RuntimeError):
-            with multi_image.several_pictures(Sampler, 2, "multidiffusion"):
+            with multi_image.several_pictures(Sampler, 2, 4, [12]):
                 self.assertIsNot(Sampler._inference_model, before)
                 raise RuntimeError("boom")
         self.assertIs(Sampler._inference_model, before)

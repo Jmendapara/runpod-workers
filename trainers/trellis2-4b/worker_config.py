@@ -4,8 +4,9 @@ job.input:
   image_r2_key       str            the picture, read from R2_INPUT_BUCKET_NAME (default R2_BUCKET_NAME)
   image_r2_keys      [str], 1..4    several pictures of the SAME object from different sides (front, back,
                                     a side); the first is the main view. One of the two is required.
-  multi_image_mode   how several pictures steer the sampler (multi_image.py): 'multidiffusion' (default) |
-                     'stochastic' | 'concat'. Ignored with one picture.
+  together_steps     0..50 (default 4): with several pictures, how many of the last sampler steps of each
+                     stage use all of them at once; the steps before take them in turn (multi_image.py).
+                     Ignored with one picture.
   quality            'standard' (1024³ cascade, the upstream default) | 'high' (1536³ cascade)
   seed               int 0..2^31-1 (default 42, the pipeline's own default)
   texture_size       1024 | 2048 | 4096 (default 2048, the demo's)
@@ -23,13 +24,14 @@ MIN_FACES, MAX_FACES = 50_000, 1_000_000
 SEED_MAX = 2_147_483_647
 MAX_KEY_LENGTH = 512
 MAX_IMAGES = 4
-MULTI_IMAGE_MODES = ("multidiffusion", "stochastic", "concat")
+TOGETHER_STEPS = 4
+MAX_TOGETHER_STEPS = 50
 
 
 @dataclass(frozen=True)
 class JobSpec:
     image_r2_keys: tuple[str, ...]
-    multi_image_mode: str
+    together_steps: int
     pipeline_type: str
     quality: str
     seed: int
@@ -80,9 +82,9 @@ def parse_input(raw: dict | None) -> JobSpec:
     if len(set(keys)) != len(keys):
         raise InputError("the same picture was sent twice")
 
-    mode = str(raw.get("multi_image_mode") or MULTI_IMAGE_MODES[0]).strip().lower()
-    if mode not in MULTI_IMAGE_MODES:
-        raise InputError(f"multi_image_mode must be one of {', '.join(MULTI_IMAGE_MODES)}")
+    together_steps = _int(raw.get("together_steps", TOGETHER_STEPS), "together_steps")
+    if not 0 <= together_steps <= MAX_TOGETHER_STEPS:
+        raise InputError(f"together_steps must be between 0 and {MAX_TOGETHER_STEPS}")
 
     quality = str(raw.get("quality") or "standard").strip().lower()
     if quality not in PIPELINE_TYPES:
@@ -110,7 +112,7 @@ def parse_input(raw: dict | None) -> JobSpec:
 
     return JobSpec(
         image_r2_keys=keys,
-        multi_image_mode=mode,
+        together_steps=together_steps,
         pipeline_type=PIPELINE_TYPES[quality],
         quality=quality,
         seed=seed,

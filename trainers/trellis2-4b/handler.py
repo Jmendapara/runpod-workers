@@ -15,8 +15,8 @@ Output:
   { "models": [{ type, data, r2_key, filename, format: 'glb', bytes, faces, vertices, texture_size }],
     "videos": [{ type, data, r2_key, filename, width, height, fps, frames }],
     "seed": int, "timings": { stage: seconds }, "gpu": str,
-    "pictures": int, and with several pictures "multi_image_mode": str and
-    "input_views": [{ theta, phi, match }] — where each picture is seen on the model }
+    "pictures": int, and with several pictures "together_steps": int, "generate_timings": { stage: seconds }
+    and "input_views": [{ theta, phi, match }] — where each picture is seen on the model }
 
 R2 is required (a GLB is tens of MB): BUCKET_ENDPOINT_URL, BUCKET_ACCESS_KEY_ID,
 BUCKET_SECRET_ACCESS_KEY, R2_BUCKET_NAME (+ optional R2_INPUT_BUCKET_NAME).
@@ -348,20 +348,24 @@ def run_job(job: dict) -> dict:
             except InputError as exc:
                 if len(spec.image_r2_keys) == 1:
                     raise
-                raise InputError(f"picture {i + 1}: {exc}") from exc
+                raise InputError(f"Picture {i + 1}: {exc}") from exc
         stage("prepare", t)
 
         t = time.time()
         if len(pictures) == 1:
             mesh = pipeline.run(pictures[0], seed=spec.seed, preprocess_image=False, pipeline_type=spec.pipeline_type)[0]
         else:
-            mesh = multi_image.run(pipeline, pictures, spec.seed, spec.pipeline_type, spec.multi_image_mode)[0]
+            generate_timings: dict = {}
+            mesh = multi_image.run(pipeline, pictures, spec.seed, spec.pipeline_type, spec.together_steps, timings=generate_timings)[0]
+            log(f"several pictures ({len(pictures)}, together_steps={spec.together_steps}): {generate_timings}")
         mesh.simplify(16777216)  # nvdiffrast's limit (as upstream)
         free_gpu_cache()
         stage("generate", t)
 
         tag = uuid.uuid4().hex[:8]
         result: dict = {"seed": spec.seed, "quality": spec.quality, "timings": timings, "gpu": torch.cuda.get_device_name(0), "pictures": len(pictures)}
+        if len(pictures) > 1:
+            result["generate_timings"] = generate_timings
 
         t = time.time()
         # How the app's 3D viewer opens it (model-viewer camera-orbit, degrees) — the turntable's first frame:
@@ -373,7 +377,7 @@ def run_job(job: dict) -> dict:
             input_views.append({"theta": round(theta, 1), "phi": round(phi, 1), "match": round(match, 3)})
         yaw0, view = chosen[0][0], input_views[0]
         if len(pictures) > 1:
-            result["multi_image_mode"] = spec.multi_image_mode
+            result["together_steps"] = spec.together_steps
             result["input_views"] = input_views
         stage("view", t)
 
