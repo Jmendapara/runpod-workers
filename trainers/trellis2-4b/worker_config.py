@@ -4,9 +4,9 @@ job.input:
   image_r2_key       str            the picture, read from R2_INPUT_BUCKET_NAME (default R2_BUCKET_NAME)
   image_r2_keys      [str], 1..4    several pictures of the SAME object from different sides (front, back,
                                     a side); the first is the main view. One of the two is required.
-  together_steps     0..50 (default 4): with several pictures, how many of the last sampler steps of each
-                     stage use all of them at once; the steps before take them in turn (multi_image.py).
-                     Ignored with one picture.
+  together_steps     0..50: with several pictures, how many of the last sampler steps of each stage use
+                     all of them at once; the steps before take them in turn (multi_image.py). Default:
+                     0 for two pictures, 4 for three or four. Ignored with one picture.
   sampler_steps      4..50 (default: pipeline.json's 12): with several pictures, the steps of every stage's
                      sampler. Ignored with one picture.
   quality            'standard' (1024³ cascade, the upstream default) | 'high' (1536³ cascade)
@@ -26,7 +26,6 @@ MIN_FACES, MAX_FACES = 50_000, 1_000_000
 SEED_MAX = 2_147_483_647
 MAX_KEY_LENGTH = 512
 MAX_IMAGES = 4
-TOGETHER_STEPS = 4
 MAX_TOGETHER_STEPS = 50
 MIN_SAMPLER_STEPS, MAX_SAMPLER_STEPS = 4, 50
 
@@ -34,7 +33,7 @@ MIN_SAMPLER_STEPS, MAX_SAMPLER_STEPS = 4, 50
 @dataclass(frozen=True)
 class JobSpec:
     image_r2_keys: tuple[str, ...]
-    together_steps: int
+    together_steps: int | None
     sampler_steps: int | None
     pipeline_type: str
     quality: str
@@ -86,9 +85,11 @@ def parse_input(raw: dict | None) -> JobSpec:
     if len(set(keys)) != len(keys):
         raise InputError("the same picture was sent twice")
 
-    together_steps = _int(raw.get("together_steps", TOGETHER_STEPS), "together_steps")
-    if not 0 <= together_steps <= MAX_TOGETHER_STEPS:
-        raise InputError(f"together_steps must be between 0 and {MAX_TOGETHER_STEPS}")
+    together_steps = raw.get("together_steps")
+    if together_steps is not None:
+        together_steps = _int(together_steps, "together_steps")
+        if not 0 <= together_steps <= MAX_TOGETHER_STEPS:
+            raise InputError(f"together_steps must be between 0 and {MAX_TOGETHER_STEPS}")
     sampler_steps = raw.get("sampler_steps")
     if sampler_steps is not None:
         sampler_steps = _int(sampler_steps, "sampler_steps")

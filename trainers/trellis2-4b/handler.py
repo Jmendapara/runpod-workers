@@ -367,8 +367,9 @@ def run_job(job: dict) -> dict:
             mesh = pipeline.run(pictures[0], seed=spec.seed, preprocess_image=False, pipeline_type=spec.pipeline_type)[0]
         else:
             generate_timings: dict = {}
-            mesh = multi_image.run(pipeline, pictures, spec.seed, spec.pipeline_type, spec.together_steps, steps=spec.sampler_steps, timings=generate_timings)[0]
-            log(f"several pictures ({len(pictures)}, steps={spec.sampler_steps}, together_steps={spec.together_steps}): {generate_timings}")
+            together_steps = multi_image.default_together_steps(len(pictures)) if spec.together_steps is None else spec.together_steps
+            mesh = multi_image.run(pipeline, pictures, spec.seed, spec.pipeline_type, together_steps, steps=spec.sampler_steps, timings=generate_timings)[0]
+            log(f"several pictures ({len(pictures)}, steps={spec.sampler_steps}, together_steps={together_steps}): {generate_timings}")
         mesh.simplify(16777216)  # nvdiffrast's limit (as upstream)
         free_gpu_cache()
         stage("generate", t)
@@ -388,7 +389,7 @@ def run_job(job: dict) -> dict:
             input_views.append({"theta": round(theta, 1), "phi": round(phi, 1), "match": round(match, 3)})
         yaw0, view = chosen[0][0], input_views[0]
         if len(pictures) > 1:
-            result["together_steps"] = spec.together_steps
+            result["together_steps"] = together_steps
             result["sampler_steps"] = spec.sampler_steps
             result["input_views"] = input_views
         stage("view", t)

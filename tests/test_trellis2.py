@@ -73,7 +73,7 @@ class ParseInput(unittest.TestCase):
         spec = parse_input({"image_r2_keys": keys, "image_r2_key": "ignored.png"})
         self.assertEqual(spec.image_r2_keys, tuple(keys))
         self.assertEqual(spec.image_r2_key, keys[0])
-        self.assertEqual(spec.together_steps, 4)
+        self.assertIsNone(spec.together_steps)  # the handler picks by the number of pictures
         self.assertEqual(parse_input({"image_r2_keys": keys, "together_steps": 0}).together_steps, 0)
         self.assertIsNone(spec.sampler_steps)
         self.assertEqual(parse_input({"image_r2_keys": keys, "sampler_steps": 24}).sampler_steps, 24)
@@ -165,6 +165,9 @@ class MultiImage(unittest.TestCase):
     def test_more_together_steps_than_the_sampler_has_means_every_step(self):
         infer, _ = self.sampler(2, together_steps=50)
         self.assertEqual([infer(None, "model", "x", t, Cond([1.0, 3.0])) for t in self.T], [2.0] * 5)
+
+    def test_two_pictures_take_turns_and_more_finish_together(self):
+        self.assertEqual([multi_image.default_together_steps(n) for n in (2, 3, 4)], [0, 4, 4])
 
     def test_the_sampler_class_is_restored_even_after_an_error(self):
         class Sampler:

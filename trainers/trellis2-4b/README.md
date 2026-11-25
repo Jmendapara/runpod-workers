@@ -34,6 +34,9 @@ Background removal uses `ZhengPeng7/BiRefNet` (MIT, the code's default) instead 
 | Field | Default | |
 |---|---|---|
 | `image_r2_key` | — | the picture (PNG/JPEG/WebP; transparency is used as the cut-out) |
+| `image_r2_keys` | — | instead: 1–4 pictures of the same object from different sides, the main view first (see below) |
+| `together_steps` | 0 for two pictures, 4 for more | several pictures: how many last sampler steps use all of them at once |
+| `sampler_steps` | 12 (`pipeline.json`) | several pictures: sampler steps of every stage |
 | `quality` | `standard` | `standard` = 1024³ cascade (upstream default), `high` = 1536³ cascade |
 | `seed` | 42 | |
 | `texture_size` | 2048 | 1024 / 2048 / 4096 |
@@ -53,10 +56,23 @@ Background removal uses `ZhengPeng7/BiRefNet` (MIT, the code's default) instead 
 
 A refused input or a failure returns `{ "error": "…" }`. Unit tests: `python3 tests/test_trellis2.py`.
 
+## Several pictures
+
+TRELLIS.2 has no multi-picture mode; `multi_image.py` ports TRELLIS v1's tuning-free `run_multi_image`
+to its samplers (each picture is encoded on its own and the pictures steer every sampler step, in turn or
+together). The back, and anything else the main picture does not show, then follows a picture instead of
+a guess. Each picture is cut out like a single one; a picture with no object fails the job with
+`Picture N: …`. The turntable and `models[0].view` start from the main picture; `input_views` gives the
+view each picture was matched to, `generate_timings` the seconds per stage. Measured behaviour, limits
+and why the defaults are what they are: the docstring of `multi_image.py`.
+
 ## Time budget and fallbacks
 
 The endpoint stops a job at 900 s; the handler answers by 870 s and sets `refresh_worker` (a RunPod
-timeout fails the job but leaves a stuck handler running, and the worker never takes another job). The
+timeout fails the job but leaves a stuck handler running, and the worker never takes another job).
+Progress updates are sent on threads the handler waits for before it returns: the SDK's own
+`progress_update` is not ordered against the job's result, and one that landed after it left finished
+jobs `IN_PROGRESS` for good. The
 GLB bake runs in `bake.py` (its own process) under a limit, because on fragmented shapes (hair, fur)
 `to_glb` can run for 20+ minutes:
 

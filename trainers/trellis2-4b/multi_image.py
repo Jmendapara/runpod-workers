@@ -3,34 +3,47 @@
 TRELLIS.2 is trained on one picture and its pipeline has no multi-picture entry point. TRELLIS (v1)
 shipped a tuning-free one, `run_multi_image`, and it carries over because the samplers are the same
 flow-matching Euler samplers: every picture is encoded on its own, and at each sampler step the model's
-prediction is steered by the pictures. v1 has two ways to do that, and each fails in its own way on
-TRELLIS.2 (measured on the dev endpoint, 2026-11-25):
+prediction is steered by the pictures. v1 has two ways to do that:
 
   in turn    ("stochastic" in v1) one picture per step, in turn, starting with the main picture. Free.
-             But the last steps cross most of the noise range, so whichever picture has the last turn
-             repaints the fine detail of the whole object and the other pictures' sides come out smudged
-             — worse with every picture added.
-  together   ("multidiffusion" in v1) the mean of one prediction per picture, at every step. One extra
-             model call per extra picture per step. No picture dominates, but while the noise is still
-             high the pictures disagree about colours they cannot see and the mean is mud (a grey
-             backpack seen only from behind comes out tan).
+  together   ("multidiffusion" in v1) the mean of one prediction per picture, at every step: one extra
+             model call per extra picture per step.
 
-So the default does both, in that order: the pictures take turns while the object is being laid out, then
-the last `together_steps` steps of every stage are taken together.
+and `together_steps` mixes them: the pictures take turns, then the last `together_steps` steps of every
+stage are taken together (0 = v1's stochastic, >= the sampler's steps = v1's multidiffusion).
 
-  together_steps = 0        v1's stochastic
-  together_steps >= steps   v1's multidiffusion
+What about 40 runs on the dev endpoint showed (2026-11-25, five objects, seed 42 — one seed, so read it as
+a tendency, not a law):
+  - A second picture does what it is for: the back of the model follows the back picture (a backpack's
+    shape and colour, a tail, both arms, a hoodie instead of an invented cape) instead of a guess.
+  - Two pictures: in turn was clean in 4 of 4. Together, at every step or only at the end, came out
+    muddier in 4 of 4 (a grey backpack seen only from behind came out tan or brown).
+  - Three or four pictures: in turn leaves each picture few steps, and the picture with the last turn
+    repaints the fine detail of the whole object — smudged or wrong texture in 3 of 6. Taking the last
+    4 steps together was acceptable in 5 of 5. Together at every step was not reliably better (1 clean,
+    1 smudged) and costs up to 4x.
+  - More sampler steps (18, 20, 24) did not help, and made one two-picture run worse.
+  - Joining the pictures' tokens into one conditioning sequence (not from TRELLIS) put a second face on
+    the back of a head. Not kept.
+  - Pictures that disagree with each other (AI-drawn "other sides") come out smudged where they disagree,
+    whatever the setting.
+Hence `default_together_steps`. `together_steps` and `sampler_steps` stay job inputs for tuning.
 
 The mixing sits under classifier-free guidance, so the guidance interval and the CFG rescale of
 pipeline.json apply to the mixed prediction exactly as they apply to a single picture's.
 
-`make_inference` is pure Python (no torch), so the step logic is unit-tested on a laptop.
+`make_inference` and `default_together_steps` are pure Python (no torch), unit-tested on a laptop.
 """
 from __future__ import annotations
 
 from contextlib import contextmanager
 
 CASCADE_RESOLUTION = {"1024_cascade": 1024, "1536_cascade": 1536}
+
+
+def default_together_steps(pictures: int) -> int:
+    """Two pictures take turns to the end; three or four take the last 4 steps together (see above)."""
+    return 0 if pictures <= 2 else 4
 
 
 def make_inference(original, count: int, together_steps: int, stage_steps: list[int]):
