@@ -78,11 +78,12 @@ def conditioning(pipeline, pictures: list, resolution: int) -> dict:
     return {"cond": cond, "neg_cond": torch.zeros_like(cond[:1])}
 
 
-def run(pipeline, pictures: list, seed: int, pipeline_type: str, together_steps: int, max_num_tokens: int = 49152,
-        timings: dict | None = None) -> list:
+def run(pipeline, pictures: list, seed: int, pipeline_type: str, together_steps: int, steps: int | None = None,
+        max_num_tokens: int = 49152, timings: dict | None = None) -> list:
     """Trellis2ImageTo3DPipeline.run for the two cascade types, conditioned on several preprocessed
-    pictures. Same stages, sampler settings and seeding as upstream. `timings` (optional) gets the
-    seconds each stage took."""
+    pictures. Same stages, sampler settings and seeding as upstream, except `steps`: when given, every
+    stage's sampler takes that many steps instead of pipeline.json's. `timings` (optional) gets the seconds
+    each stage took."""
     import time
 
     import torch
@@ -104,18 +105,19 @@ def run(pipeline, pictures: list, seed: int, pipeline_type: str, together_steps:
         cond_1024 = conditioning(pipeline, pictures, 1024)
         lap("encode")
         # The stages below, in order: structure, shape at 512, shape at the cascade resolution, texture.
-        shape_steps = pipeline.shape_slat_sampler_params["steps"]
-        stage_steps = [pipeline.sparse_structure_sampler_params["steps"], shape_steps, shape_steps, pipeline.tex_slat_sampler_params["steps"]]
+        override = {"steps": steps} if steps else {}
+        shape_steps = steps or pipeline.shape_slat_sampler_params["steps"]
+        stage_steps = [steps or pipeline.sparse_structure_sampler_params["steps"], shape_steps, shape_steps, steps or pipeline.tex_slat_sampler_params["steps"]]
         with several_pictures(FlowEulerSampler, len(pictures), together_steps, stage_steps):
-            coords = pipeline.sample_sparse_structure(cond_512, 32, 1, {})
+            coords = pipeline.sample_sparse_structure(cond_512, 32, 1, override)
             lap("structure")
             shape_slat, res = pipeline.sample_shape_slat_cascade(
                 cond_512, cond_1024,
                 models["shape_slat_flow_model_512"], models["shape_slat_flow_model_1024"],
-                512, resolution, coords, {}, max_num_tokens,
+                512, resolution, coords, override, max_num_tokens,
             )
             lap("shape")
-            tex_slat = pipeline.sample_tex_slat(cond_1024, models["tex_slat_flow_model_1024"], shape_slat, {})
+            tex_slat = pipeline.sample_tex_slat(cond_1024, models["tex_slat_flow_model_1024"], shape_slat, override)
             lap("texture")
         torch.cuda.empty_cache()
         meshes = pipeline.decode_latent(shape_slat, tex_slat, res)

@@ -29,6 +29,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import traceback
 import uuid
@@ -38,6 +39,7 @@ from concurrent.futures import TimeoutError as FutureTimeout
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import runpod  # noqa: E402
+from runpod.serverless.modules.rp_progress import _thread_target as send_progress  # noqa: E402  (runpod is pinned)
 
 from worker_config import InputError, JobSpec, output_key, parse_input  # noqa: E402
 import multi_image  # noqa: E402
@@ -331,9 +333,18 @@ def run_job(job: dict) -> dict:
     job_id = str(job.get("id") or uuid.uuid4())
     timings: dict[str, float] = {}
 
-    def stage(name: str, started: float) -> None:
+    # Progress goes out on its own thread as an IN_PROGRESS update. One that lands after the job's result
+    # puts a finished job back to IN_PROGRESS for good (seen on 4 of ~45 dev jobs: every stage done, files
+    # uploaded, status never COMPLETED), so each one is waited for before the result is returned, and the
+    # last stage is not reported at all (the result follows it at once).
+    updates: list[threading.Thread] = []
+
+    def stage(name: str, started: float, report: bool = True) -> None:
         timings[name] = round(time.time() - started, 2)
-        runpod.serverless.progress_update(job, {"stage": name, "timings": timings})
+        if report:
+            update = threading.Thread(target=send_progress, args=(job, {"stage": name, "timings": dict(timings)}), daemon=True)
+            update.start()
+            updates.append(update)
 
     pipeline, envmap = load()
     work = tempfile.mkdtemp(prefix="trellis2-")
@@ -356,8 +367,8 @@ def run_job(job: dict) -> dict:
             mesh = pipeline.run(pictures[0], seed=spec.seed, preprocess_image=False, pipeline_type=spec.pipeline_type)[0]
         else:
             generate_timings: dict = {}
-            mesh = multi_image.run(pipeline, pictures, spec.seed, spec.pipeline_type, spec.together_steps, timings=generate_timings)[0]
-            log(f"several pictures ({len(pictures)}, together_steps={spec.together_steps}): {generate_timings}")
+            mesh = multi_image.run(pipeline, pictures, spec.seed, spec.pipeline_type, spec.together_steps, steps=spec.sampler_steps, timings=generate_timings)[0]
+            log(f"several pictures ({len(pictures)}, steps={spec.sampler_steps}, together_steps={spec.together_steps}): {generate_timings}")
         mesh.simplify(16777216)  # nvdiffrast's limit (as upstream)
         free_gpu_cache()
         stage("generate", t)
@@ -378,6 +389,7 @@ def run_job(job: dict) -> dict:
         yaw0, view = chosen[0][0], input_views[0]
         if len(pictures) > 1:
             result["together_steps"] = spec.together_steps
+            result["sampler_steps"] = spec.sampler_steps
             result["input_views"] = input_views
         stage("view", t)
 
@@ -404,10 +416,12 @@ def run_job(job: dict) -> dict:
             "type": "s3_url", "data": url, "r2_key": key, "filename": f"{tag}.glb", "format": "glb",
             "bytes": os.path.getsize(glb_path), "view": view, **counts,
         }]
-        stage("upload", t)
+        stage("upload", t, report=False)
         log(f"job {job_id}: {spec.quality} pictures={len(pictures)} seed={spec.seed} faces={counts['faces']} glb={result['models'][0]['bytes'] / 1e6:.1f} MB timings={timings}")
         return result
     finally:
+        for update in updates:
+            update.join(timeout=15)
         shutil.rmtree(work, ignore_errors=True)
         torch.cuda.empty_cache()
 

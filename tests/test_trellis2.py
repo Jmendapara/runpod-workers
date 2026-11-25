@@ -75,6 +75,8 @@ class ParseInput(unittest.TestCase):
         self.assertEqual(spec.image_r2_key, keys[0])
         self.assertEqual(spec.together_steps, 4)
         self.assertEqual(parse_input({"image_r2_keys": keys, "together_steps": 0}).together_steps, 0)
+        self.assertIsNone(spec.sampler_steps)
+        self.assertEqual(parse_input({"image_r2_keys": keys, "sampler_steps": 24}).sampler_steps, 24)
 
     def test_refuses_bad_picture_lists(self):
         bad = [
@@ -88,6 +90,8 @@ class ParseInput(unittest.TestCase):
             {"image_r2_keys": [KEY, "b.png"], "together_steps": -1},
             {"image_r2_keys": [KEY, "b.png"], "together_steps": 51},
             {"image_r2_keys": [KEY, "b.png"], "together_steps": "some"},
+            {"image_r2_keys": [KEY, "b.png"], "sampler_steps": 3},
+            {"image_r2_keys": [KEY, "b.png"], "sampler_steps": 51},
         ]
         for raw in bad:
             with self.subTest(raw=raw), self.assertRaises(InputError):

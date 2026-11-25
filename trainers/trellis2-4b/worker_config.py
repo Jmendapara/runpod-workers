@@ -7,6 +7,8 @@ job.input:
   together_steps     0..50 (default 4): with several pictures, how many of the last sampler steps of each
                      stage use all of them at once; the steps before take them in turn (multi_image.py).
                      Ignored with one picture.
+  sampler_steps      4..50 (default: pipeline.json's 12): with several pictures, the steps of every stage's
+                     sampler. Ignored with one picture.
   quality            'standard' (1024³ cascade, the upstream default) | 'high' (1536³ cascade)
   seed               int 0..2^31-1 (default 42, the pipeline's own default)
   texture_size       1024 | 2048 | 4096 (default 2048, the demo's)
@@ -26,12 +28,14 @@ MAX_KEY_LENGTH = 512
 MAX_IMAGES = 4
 TOGETHER_STEPS = 4
 MAX_TOGETHER_STEPS = 50
+MIN_SAMPLER_STEPS, MAX_SAMPLER_STEPS = 4, 50
 
 
 @dataclass(frozen=True)
 class JobSpec:
     image_r2_keys: tuple[str, ...]
     together_steps: int
+    sampler_steps: int | None
     pipeline_type: str
     quality: str
     seed: int
@@ -85,6 +89,11 @@ def parse_input(raw: dict | None) -> JobSpec:
     together_steps = _int(raw.get("together_steps", TOGETHER_STEPS), "together_steps")
     if not 0 <= together_steps <= MAX_TOGETHER_STEPS:
         raise InputError(f"together_steps must be between 0 and {MAX_TOGETHER_STEPS}")
+    sampler_steps = raw.get("sampler_steps")
+    if sampler_steps is not None:
+        sampler_steps = _int(sampler_steps, "sampler_steps")
+        if not MIN_SAMPLER_STEPS <= sampler_steps <= MAX_SAMPLER_STEPS:
+            raise InputError(f"sampler_steps must be between {MIN_SAMPLER_STEPS} and {MAX_SAMPLER_STEPS}")
 
     quality = str(raw.get("quality") or "standard").strip().lower()
     if quality not in PIPELINE_TYPES:
@@ -113,6 +122,7 @@ def parse_input(raw: dict | None) -> JobSpec:
     return JobSpec(
         image_r2_keys=keys,
         together_steps=together_steps,
+        sampler_steps=sampler_steps,
         pipeline_type=PIPELINE_TYPES[quality],
         quality=quality,
         seed=seed,
