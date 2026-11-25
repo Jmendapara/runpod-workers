@@ -9,7 +9,8 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "trainers", "trellis2-4b"))
 
-from worker_config import InputError, MAX_FACES, MIN_FACES, output_key, parse_input  # noqa: E402
+from worker_config import InputError, MAX_FACES, MAX_IMAGES, MIN_FACES, output_key, parse_input  # noqa: E402
+import multi_image  # noqa: E402
 
 try:
     import numpy as np
@@ -61,9 +62,93 @@ class ParseInput(unittest.TestCase):
             with self.subTest(raw=raw), self.assertRaises(InputError):
                 parse_input(raw)
 
+    def test_one_picture_is_a_list_of_one(self):
+        spec = parse_input({"image_r2_key": KEY})
+        self.assertEqual(spec.image_r2_keys, (KEY,))
+        self.assertEqual(spec.image_r2_key, KEY)
+        self.assertEqual(parse_input({"image_r2_keys": [KEY]}).image_r2_keys, (KEY,))
+
+    def test_several_pictures_keep_their_order_and_the_first_is_the_main_one(self):
+        keys = [f"users/u1/uploads/{side}.png" for side in ("front", "back", "left", "right")]
+        spec = parse_input({"image_r2_keys": keys, "image_r2_key": "ignored.png"})
+        self.assertEqual(spec.image_r2_keys, tuple(keys))
+        self.assertEqual(spec.image_r2_key, keys[0])
+        self.assertEqual(spec.multi_image_mode, "multidiffusion")
+        self.assertEqual(parse_input({"image_r2_keys": keys, "multi_image_mode": "Stochastic"}).multi_image_mode, "stochastic")
+
+    def test_refuses_bad_picture_lists(self):
+        bad = [
+            {"image_r2_keys": []},
+            {"image_r2_keys": KEY},
+            {"image_r2_keys": [KEY, ""]},
+            {"image_r2_keys": [KEY, "../x.png"]},
+            {"image_r2_keys": [KEY, 5]},
+            {"image_r2_keys": [KEY, KEY]},
+            {"image_r2_keys": [f"k{i}.png" for i in range(MAX_IMAGES + 1)]},
+            {"image_r2_keys": [KEY, "b.png"], "multi_image_mode": "average"},
+        ]
+        for raw in bad:
+            with self.subTest(raw=raw), self.assertRaises(InputError):
+                parse_input(raw)
+
     def test_output_keys_follow_the_comfyui_workers(self):
         self.assertEqual(output_key("x.glb", "job1", "u1"), "users/u1/generations/x.glb")
         self.assertEqual(output_key("x.glb", "job1", None), "job1/x.glb")
+
+
+class Cond:
+    """A stand-in for a conditioning tensor: a batch of labelled pictures."""
+    def __init__(self, items):
+        self.items = list(items)
+        self.shape = (len(self.items),)
+
+    def __getitem__(self, s):
+        return Cond(self.items[s])
+
+
+class MultiImage(unittest.TestCase):
+    def sampler(self, count, mode):
+        calls = []
+
+        def original(self, model, x_t, t, cond=None, **kwargs):
+            calls.append((cond.items, kwargs))
+            return float(sum(cond.items))  # the "prediction" for a picture is its label
+
+        return multi_image.make_inference(original, count, mode), calls
+
+    def test_multidiffusion_averages_one_prediction_per_picture(self):
+        infer, calls = self.sampler(3, "multidiffusion")
+        pred = infer(None, "model", "x", 0.8, Cond([3.0, 6.0, 9.0]), concat_cond="shape")
+        self.assertAlmostEqual(pred, 6.0)
+        self.assertEqual([c[0] for c in calls], [[3.0], [6.0], [9.0]])
+        self.assertTrue(all(c[1] == {"concat_cond": "shape"} for c in calls))
+
+    def test_the_negative_conditioning_passes_through_once(self):
+        infer, calls = self.sampler(3, "multidiffusion")
+        self.assertEqual(infer(None, "model", "x", 0.8, Cond([0.0])), 0.0)
+        self.assertEqual(len(calls), 1)
+
+    def test_stochastic_takes_the_pictures_in_turn_and_restarts_each_stage(self):
+        infer, calls = self.sampler(2, "stochastic")
+        cond, neg = Cond([1.0, 2.0]), Cond([0.0])
+        seen = []
+        for _stage in range(2):
+            for t in (1.0, 0.9, 0.7, 0.4, 0.2):
+                seen.append(infer(None, "model", "x", t, cond))
+                infer(None, "model", "x", t, neg)  # guidance's negative call must not advance the turn
+        self.assertEqual(seen, [1.0, 2.0, 1.0, 2.0, 1.0] * 2)
+
+    def test_the_sampler_class_is_restored_even_after_an_error(self):
+        class Sampler:
+            def _inference_model(self, model, x_t, t, cond=None, **kwargs):
+                return "original"
+
+        before = Sampler._inference_model
+        with self.assertRaises(RuntimeError):
+            with multi_image.several_pictures(Sampler, 2, "multidiffusion"):
+                self.assertIsNot(Sampler._inference_model, before)
+                raise RuntimeError("boom")
+        self.assertIs(Sampler._inference_model, before)
 
 
 @unittest.skipIf(np is None, "numpy not installed")

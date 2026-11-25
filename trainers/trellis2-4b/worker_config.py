@@ -1,7 +1,11 @@
 """Input contract of the TRELLIS.2-4B worker. Pure Python (no torch), so it is unit-tested on a laptop.
 
 job.input:
-  image_r2_key       str, required  the picture, read from R2_INPUT_BUCKET_NAME (default R2_BUCKET_NAME)
+  image_r2_key       str            the picture, read from R2_INPUT_BUCKET_NAME (default R2_BUCKET_NAME)
+  image_r2_keys      [str], 1..4    several pictures of the SAME object from different sides (front, back,
+                                    a side); the first is the main view. One of the two is required.
+  multi_image_mode   how several pictures steer the sampler (multi_image.py): 'multidiffusion' (default) |
+                     'stochastic' | 'concat'. Ignored with one picture.
   quality            'standard' (1024³ cascade, the upstream default) | 'high' (1536³ cascade)
   seed               int 0..2^31-1 (default 42, the pipeline's own default)
   texture_size       1024 | 2048 | 4096 (default 2048, the demo's)
@@ -18,11 +22,14 @@ TEXTURE_SIZES = (1024, 2048, 4096)
 MIN_FACES, MAX_FACES = 50_000, 1_000_000
 SEED_MAX = 2_147_483_647
 MAX_KEY_LENGTH = 512
+MAX_IMAGES = 4
+MULTI_IMAGE_MODES = ("multidiffusion", "stochastic", "concat")
 
 
 @dataclass(frozen=True)
 class JobSpec:
-    image_r2_key: str
+    image_r2_keys: tuple[str, ...]
+    multi_image_mode: str
     pipeline_type: str
     quality: str
     seed: int
@@ -30,6 +37,11 @@ class JobSpec:
     decimation_target: int
     turntable: bool
     uid: str | None
+
+    @property
+    def image_r2_key(self) -> str:
+        """The main picture (the only one for a single-picture job)."""
+        return self.image_r2_keys[0]
 
 
 class InputError(ValueError):
@@ -48,12 +60,29 @@ def _int(raw, name: str) -> int:
     return value
 
 
+def _key(key) -> str:
+    if not isinstance(key, str) or not key.strip() or len(key) > MAX_KEY_LENGTH or ".." in key or key.startswith("/"):
+        raise InputError("image_r2_key must be the R2 key of the input picture")
+    return key.strip()
+
+
 def parse_input(raw: dict | None) -> JobSpec:
     if not isinstance(raw, dict):
         raise InputError("input must be an object")
-    key = raw.get("image_r2_key")
-    if not isinstance(key, str) or not key.strip() or len(key) > MAX_KEY_LENGTH or ".." in key or key.startswith("/"):
-        raise InputError("image_r2_key must be the R2 key of the input picture")
+    keys = raw.get("image_r2_keys")
+    if keys is None:
+        keys = [raw.get("image_r2_key")]
+    if not isinstance(keys, (list, tuple)) or not keys:
+        raise InputError("image_r2_keys must be a list of R2 keys of the input pictures")
+    if len(keys) > MAX_IMAGES:
+        raise InputError(f"at most {MAX_IMAGES} pictures")
+    keys = tuple(_key(k) for k in keys)
+    if len(set(keys)) != len(keys):
+        raise InputError("the same picture was sent twice")
+
+    mode = str(raw.get("multi_image_mode") or MULTI_IMAGE_MODES[0]).strip().lower()
+    if mode not in MULTI_IMAGE_MODES:
+        raise InputError(f"multi_image_mode must be one of {', '.join(MULTI_IMAGE_MODES)}")
 
     quality = str(raw.get("quality") or "standard").strip().lower()
     if quality not in PIPELINE_TYPES:
@@ -80,7 +109,8 @@ def parse_input(raw: dict | None) -> JobSpec:
         raise InputError("uid must be a user id")
 
     return JobSpec(
-        image_r2_key=key.strip(),
+        image_r2_keys=keys,
+        multi_image_mode=mode,
         pipeline_type=PIPELINE_TYPES[quality],
         quality=quality,
         seed=seed,

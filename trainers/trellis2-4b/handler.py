@@ -1,9 +1,11 @@
 """RunPod serverless handler: one picture → a textured, PBR 3D model with TRELLIS.2-4B.
 
 Per job:
-  1. download the picture from R2 (input contract: worker_config.py)
+  1. download the picture from R2 (input contract: worker_config.py) — or up to four pictures of the
+     same object from different sides
   2. TRELLIS.2 image-to-3D, the official pipeline and sampler settings (pipeline.json); the
-     background is removed with BiRefNet unless the picture already has transparency
+     background is removed with BiRefNet unless the picture already has transparency. Several
+     pictures steer the same samplers together (multi_image.py)
   3. bake the GLB exactly as the official demo does (o_voxel.postprocess.to_glb: remesh, UV
      unwrap, base colour + metallic/roughness textures, WebP)
   4. render a 360° turntable of the model under a studio light (the app's grid preview)
@@ -12,7 +14,9 @@ Per job:
 Output:
   { "models": [{ type, data, r2_key, filename, format: 'glb', bytes, faces, vertices, texture_size }],
     "videos": [{ type, data, r2_key, filename, width, height, fps, frames }],
-    "seed": int, "timings": { stage: seconds }, "gpu": str }
+    "seed": int, "timings": { stage: seconds }, "gpu": str,
+    "pictures": int, and with several pictures "multi_image_mode": str and
+    "input_views": [{ theta, phi, match }] — where each picture is seen on the model }
 
 R2 is required (a GLB is tens of MB): BUCKET_ENDPOINT_URL, BUCKET_ACCESS_KEY_ID,
 BUCKET_SECRET_ACCESS_KEY, R2_BUCKET_NAME (+ optional R2_INPUT_BUCKET_NAME).
@@ -36,6 +40,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import runpod  # noqa: E402
 
 from worker_config import InputError, JobSpec, output_key, parse_input  # noqa: E402
+import multi_image  # noqa: E402
 import picture as picture_prep  # noqa: E402
 import views  # noqa: E402
 
@@ -207,19 +212,20 @@ def orbit_cameras(mesh, yaws, pitch: float):
     return extr, [intr] * len(yaws), options
 
 
-def choose_view(mesh, envmap, picture) -> tuple[float, float]:
-    """The yaw whose small render best matches the cut-out input (views.py). Returns (yaw, score)."""
+def choose_views(mesh, envmap, pictures: list) -> list[tuple[float, float]]:
+    """For each cut-out input, the yaw whose small render best matches it (views.py), as (yaw, score).
+    The model is rendered once; every picture is scored against the same renders."""
     import numpy as np
     from trellis2.utils import render_utils
 
-    target = views.target_from_cutout(np.asarray(picture.convert("RGB")).astype(np.float32) / 255.0)
+    targets = [views.target_from_cutout(np.asarray(p.convert("RGB")).astype(np.float32) / 255.0) for p in pictures]
     yaws = views.candidate_yaws()
-    if target is None:
-        return yaws[0], -1.0
+    if all(t is None for t in targets):
+        return [(yaws[0], -1.0)] * len(pictures)
     extr, intr, opts = orbit_cameras(mesh, yaws, TURNTABLE_PITCH)
     frames = render_utils.render_frames(mesh, extr, intr, {"resolution": VIEW_SEARCH_SIZE, "ssaa": 1, "peel_layers": 2, **opts}, verbose=False, envmap=envmap)
     rendered = [views.normalize_view(shaded.astype(np.float32) / 255.0, mask[..., 0] > 127) for shaded, mask in zip(frames["shaded"], frames["mask"])]
-    return views.best_yaw(target, rendered, yaws)
+    return [(yaws[0], -1.0) if t is None else views.best_yaw(t, rendered, yaws) for t in targets]
 
 
 def render_turntable(mesh, envmap, out_path: str, yaw0: float) -> dict:
@@ -333,25 +339,42 @@ def run_job(job: dict) -> dict:
     work = tempfile.mkdtemp(prefix="trellis2-")
     try:
         t = time.time()
-        src = os.path.join(work, "input")
-        download_input(spec.image_r2_key, src)
-        picture = cut_out(pipeline, open_picture(src))
+        pictures = []
+        for i, key in enumerate(spec.image_r2_keys):
+            src = os.path.join(work, f"input{i}")
+            download_input(key, src)
+            try:
+                pictures.append(cut_out(pipeline, open_picture(src)))
+            except InputError as exc:
+                if len(spec.image_r2_keys) == 1:
+                    raise
+                raise InputError(f"picture {i + 1}: {exc}") from exc
         stage("prepare", t)
 
         t = time.time()
-        mesh = pipeline.run(picture, seed=spec.seed, preprocess_image=False, pipeline_type=spec.pipeline_type)[0]
+        if len(pictures) == 1:
+            mesh = pipeline.run(pictures[0], seed=spec.seed, preprocess_image=False, pipeline_type=spec.pipeline_type)[0]
+        else:
+            mesh = multi_image.run(pipeline, pictures, spec.seed, spec.pipeline_type, spec.multi_image_mode)[0]
         mesh.simplify(16777216)  # nvdiffrast's limit (as upstream)
         free_gpu_cache()
         stage("generate", t)
 
         tag = uuid.uuid4().hex[:8]
-        result: dict = {"seed": spec.seed, "quality": spec.quality, "timings": timings, "gpu": torch.cuda.get_device_name(0)}
+        result: dict = {"seed": spec.seed, "quality": spec.quality, "timings": timings, "gpu": torch.cuda.get_device_name(0), "pictures": len(pictures)}
 
         t = time.time()
-        yaw0, match = choose_view(mesh, envmap, picture)
-        theta, phi = views.viewer_orbit(yaw0, TURNTABLE_PITCH)
-        # How the app's 3D viewer opens it (model-viewer camera-orbit, degrees) — the turntable's first frame.
-        view = {"theta": round(theta, 1), "phi": round(phi, 1), "match": round(match, 3)}
+        # How the app's 3D viewer opens it (model-viewer camera-orbit, degrees) — the turntable's first frame:
+        # the main picture's view. The other pictures' views say how well the model took each of them.
+        chosen = choose_views(mesh, envmap, pictures)
+        input_views = []
+        for yaw, match in chosen:
+            theta, phi = views.viewer_orbit(yaw, TURNTABLE_PITCH)
+            input_views.append({"theta": round(theta, 1), "phi": round(phi, 1), "match": round(match, 3)})
+        yaw0, view = chosen[0][0], input_views[0]
+        if len(pictures) > 1:
+            result["multi_image_mode"] = spec.multi_image_mode
+            result["input_views"] = input_views
         stage("view", t)
 
         if spec.turntable:
@@ -378,7 +401,7 @@ def run_job(job: dict) -> dict:
             "bytes": os.path.getsize(glb_path), "view": view, **counts,
         }]
         stage("upload", t)
-        log(f"job {job_id}: {spec.quality} seed={spec.seed} faces={counts['faces']} glb={result['models'][0]['bytes'] / 1e6:.1f} MB timings={timings}")
+        log(f"job {job_id}: {spec.quality} pictures={len(pictures)} seed={spec.seed} faces={counts['faces']} glb={result['models'][0]['bytes'] / 1e6:.1f} MB timings={timings}")
         return result
     finally:
         shutil.rmtree(work, ignore_errors=True)
